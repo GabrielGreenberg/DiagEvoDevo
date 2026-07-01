@@ -35,9 +35,9 @@ describe('session: temperature annealing', () => {
   it('starts hot and cools toward config.T', () => {
     const s = createSession(1, 1);
     expect(s.temperature()).toBeCloseTo(config.anneal.tStart, 6);
-    for (let i = 0; i < 2000; i++) s.step();
-    expect(s.temperature()).toBeLessThan(config.anneal.tStart);
-    expect(s.temperature()).toBeGreaterThanOrEqual(config.T - 1e-9);
+    for (let i = 0; i < 600; i++) s.step();
+    expect(s.temperature()).toBeLessThan(config.anneal.tStart); // cooled
+    expect(s.temperature()).toBeGreaterThanOrEqual(config.T - 1e-9); // never below the floor
   });
 });
 

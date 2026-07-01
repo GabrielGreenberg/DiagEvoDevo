@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M6 COMPLETE (optimizer converges to faithful bars, 24/24 seeds, mean quality 0.999). M7 in progress.
+## Status: ✅ v1 COMPLETE (M0–M7). GUI live; random seeds evolve to faithful bar charts (quality→100%).
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -48,8 +48,11 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       `scripts/bench.ts`. Bench: **24/24 seeds converge, mean quality 0.999, order sorted 22/24, 0
       pathologies**. 15 optim tests: Adam ascent, plateau-fires-on-valley/not-on-slow-climb, evolution
       reproducibility+elitism, session convergence to all-rungs bars, determinism, reset, annealing.
-- [ ] **M7 — GUI.** canvas + data panel + score panel + controls + persistence. Gate:
-      manual — watch a seed evolve to bars, save, new seed.
+- [x] **M7 — GUI.** canvas + data panel + score panel + controls + persistence. Gate:
+      manual — watch a seed evolve to bars, save, new seed. **DONE:** `ui/{store,canvas,dataPanel,
+      scorePanel,controls,app}`, `main.ts`, `index.html` (dark theme), `persistence/store.ts`.
+      **Preview-verified:** seed 1 evolved 37%→100% quality (sales all 3 rungs=1, order F_ord=1),
+      Save enabled on convergence, Save→Load round-trips, new seed resets, zero console errors.
 - [ ] **M8 — First penalty on.** Enable `frozenDof`; confirm it installs shared baseline.
 - [ ] **M9 — BestAssignment (invention mode).** argmax over legal assignments; confirm
       radial/dot encodings emerge for suitable configs.
@@ -115,13 +118,14 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M7 — GUI (v1 done). `ui/{store,canvas,dataPanel,scorePanel,controls,app}`, `main.ts`, `index.html`,
-`persistence/store.ts`. Two-pane live GUI: canvas (12 evolving segments), data panel (A..L + values),
-score panel (live F_ord/F_int/F_ratio, exact F_ord labeled), controls (New Figure/Data Seed,
-Run/Pause/Step/Reset, Save/Load, editable seeds), rAF loop (session.step ×stepsPerFrame per frame,
-canvas every frame, DOM panels on store-notify). Save enabled on convergence; Save/Load round-trip
-honoring the stored config snapshot. Gate (manual): watch a seed evolve to bars, breakdown sensible,
-save/load works, new seed repeats. SELF-VERIFY FIRST via Preview MCP (start dev server, drive controls,
-screenshot convergence, check console), then present the live demo. NOTE: v1 (penalties off) converges
-to bars "up to orientation/baseline" — clean vertical bars need frozenDof (M8, out of scope); the
-proportions + ordering + live score breakdown are the fidelity evidence. Do not skip gates.
+**v1 (M0–M7) is COMPLETE and verified.** `npm run dev` → live GUI; `npm run check` (140 tests) green;
+`npm run bench` (24/24 seeds converge, mean quality 0.999); `npm run gradcheck` trusts the AD engine.
+NOTE: v1 (penalties off) converges to bars "up to orientation/baseline" — the proportions + ordering +
+live score breakdown are the fidelity evidence; clean VERTICAL bars need `frozenDof` (M8, one config flip).
+
+Out of THIS run's scope (user chose M7 on 2026-07-01), available as the next run when desired:
+- **M8 — First penalty on.** Set `config.penalties.frozenDof > 0` (already fully wired + tested);
+  confirm it installs a shared baseline / common orientation → clean vertical bars emerge.
+- **M9 — BestAssignment (invention).** Flip `config.assignmentPolicy = 'best'` (policy already built);
+  confirm radial/dot-plot encodings emerge for suitable configs. May need argmax caching (perf).
+- **M10 — Weight calibration.** Anchor `w_ord/w_int/w_ratio` to Cleveland–McGill (flagged open problem).
