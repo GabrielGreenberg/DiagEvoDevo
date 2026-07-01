@@ -122,6 +122,8 @@ export const config = {
 
   // ── GUI / render loop ─────────────────────────────────────────────────────
   stepsPerFrame: 20, // inner optimizer steps per animation frame (decouples fps from step size)
-} as const;
+};
+// NOTE: no `as const` — fields keep plain number/string types so the user (and tests / the optimizer)
+// can override weights, penalty weights, and hyperparameters by spreading a modified copy.
 
 export type Config = typeof config;

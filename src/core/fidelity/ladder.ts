@@ -11,6 +11,7 @@
 
 import { Value, val, sub, mul, div, neg, exp, log, sigmoid } from '../autograd/engine';
 import { mean, variance, r2 } from '../autograd/ops';
+import { meanN, varianceN } from '../statsN';
 
 // ── differentiable forms (the optimized path) ───────────────────────────────────
 
@@ -53,22 +54,6 @@ export function fRatio(c: Value[], v: Value[], sigma0Sq: number): Value {
 
 function signN(x: number): number {
   return x > 0 ? 1 : x < 0 ? -1 : 0;
-}
-
-function meanN(x: ArrayLike<number>): number {
-  let s = 0;
-  for (let i = 0; i < x.length; i++) s += x[i]!;
-  return x.length ? s / x.length : 0;
-}
-
-function varianceN(x: ArrayLike<number>): number {
-  const m = meanN(x);
-  let s = 0;
-  for (let i = 0; i < x.length; i++) {
-    const d = x[i]! - m;
-    s += d * d;
-  }
-  return x.length ? s / x.length : 0;
 }
 
 /** Exact ordinal fidelity: (Kendall τ + 1)/2 = concordant-pair fraction, ties 0.5. */
