@@ -5,7 +5,25 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: ✅ v1 COMPLETE (M0–M7). GUI live; random seeds evolve to faithful bar charts (quality→100%).
+## Status: ✅ v1 COMPLETE (M0–M7) + post-v1 refinements. GUI live; seeds evolve to faithful bars (quality→100%).
+
+### Post-v1 refinements (user review, 2026-07-01)
+1. **Score monotonicity confirmed + tested.** Both data relations (order + value) are scored and additive:
+   both-match=8.0 > value-only(scrambled x)=7.59 > order-only(flat heights)=2.01. Test in `score.test.ts`.
+   NOTE for the user: because ordinal data earns 1 rung and ratio data 3 (CONCEPT §6), the order dimension
+   is only 1/8 of the max — a positionally-scrambled figure still scores ~95%. Weights are yours to tune
+   (config.weights); principled calibration is M10.
+2. **Posited frame drawn.** `canvas.ts` renders the frame origin + ∥/⊥ axes (dashed, labelled "frame O").
+   Inert in v1 (page-anchored carriers) but now explicit; load-bearing at M8/M9.
+3. **Score panel clarified.** Header "homomorphism of ⟨order × value⟩", "total / maxReward", and a
+   "both data relations compared, like-with-like" subtitle above the two comparison blocks.
+4. **"Weird resets" fixed.** Root cause: the display followed `bestMember`, which jumped between
+   population members (esp. restart/mutation members overtaking near convergence). Fix: the displayed
+   figure is now a PROTECTED CHAMPION (member 0, a smooth gradient trajectory); explorers search, and the
+   champion only ADOPTS an explorer's figure when it beats it by `evolve.adoptMargin` (0.05) — a deliberate
+   jump, not flicker. Result: display jumps 3→2 (both early), no late resets; bench mean quality 0.999→1.000,
+   mean steps 3249→2692. Finding: the annealed surrogate makes a single trajectory converge on ~5/6 seeds;
+   the population now only rescues the occasional hard seed via adoption.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 

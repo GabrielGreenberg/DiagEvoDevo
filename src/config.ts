@@ -73,11 +73,16 @@ export const config = {
 
   // ── Evolution / random-restart outer layer (CONCEPT §9) ──────────────────
   evolve: {
-    populationSize: 8, // parallel restarts
+    populationSize: 8, // 1 displayed champion + (N−1) exploring members (parallel restarts)
     mutationSigma: 0.2, // gaussian perturbation scale for restart/mutation
     restartOnStall: true,
     maxRestarts: 20,
     outerEvery: 25, // run an evolve generation every N inner Adam steps
+    // The DISPLAYED figure is a protected champion (member 0) running a smooth gradient trajectory.
+    // It only "adopts" an exploring member's figure — a visible jump — when that explorer beats it by
+    // this score margin. Prevents the display from flickering between near-tied members (the "resets"),
+    // while still letting a genuine breakthrough rescue a stuck champion.
+    adoptMargin: 0.05,
   },
 
   // ── Convergence detection: SCORE plateau, not param fixity (CONCEPT §9) ───

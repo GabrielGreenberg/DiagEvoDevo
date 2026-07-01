@@ -7,6 +7,7 @@
 // the plateau detector fires (which enables Save).
 
 import { config } from '../config';
+import { frameFromConfig } from '../core/frame';
 import { createSession } from '../optim/session';
 import { saveResult, loadLatest } from '../persistence/store';
 import { createStore, type AppState } from './store';
@@ -101,10 +102,11 @@ export function startApp(root: HTMLElement): void {
       : `figure seed ${s.figureSeed} · data seed ${s.dataSeed} · ${s.session.steps} steps`;
   });
 
+  const posited = frameFromConfig();
   function renderFrame(): void {
     const s = store.get();
     if (s.loaded) {
-      renderCanvas(canvas, s.loaded.figure, s.loaded.data.labels);
+      renderCanvas(canvas, s.loaded.figure, s.loaded.data.labels, posited);
       renderScorePanel(scoreRoot, {
         breakdown: s.loaded.score,
         steps: s.loaded.steps,
@@ -113,7 +115,7 @@ export function startApp(root: HTMLElement): void {
       });
       return;
     }
-    renderCanvas(canvas, s.session.figure, s.session.data.labels);
+    renderCanvas(canvas, s.session.figure, s.session.data.labels, posited);
     renderScorePanel(scoreRoot, {
       breakdown: s.session.breakdown(),
       steps: s.session.steps,

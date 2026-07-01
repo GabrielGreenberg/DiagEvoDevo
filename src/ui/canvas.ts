@@ -6,6 +6,8 @@
 
 import { N_SEGMENTS, segBase } from '../core/figure';
 import type { Figure } from '../core/figure';
+import type { PositedFrame } from '../core/frame';
+import { unit, perp } from '../core/frame';
 
 const PAD = 36; // px padding inside the canvas
 
@@ -18,6 +20,7 @@ export function renderCanvas(
   canvas: HTMLCanvasElement,
   figure: Figure,
   labels: readonly string[],
+  frame?: PositedFrame,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -48,6 +51,7 @@ export function renderCanvas(
     acc(figure[b]!, figure[b + 1]!);
     acc(figure[b + 2]!, figure[b + 3]!);
   }
+  if (frame) acc(frame.origin[0], frame.origin[1]); // keep the posited origin in view
   const dataW = Math.max(1e-6, maxX - minX);
   const dataH = Math.max(1e-6, maxY - minY);
   const scale = Math.min((W - 2 * PAD) / dataW, (H - 2 * PAD) / dataH);
@@ -56,6 +60,33 @@ export function renderCanvas(
   const offY = (H - dataH * scale) / 2;
   const tx = (x: number): number => offX + (x - minX) * scale;
   const ty = (y: number): number => H - (offY + (y - minY) * scale); // flip y (up is positive)
+
+  // posited reference frame (origin + ∥/⊥ axes) — the anchor for frame-stamped measurements. Inert in
+  // v1 (carriers are page-anchored) but drawn so it is explicit; it becomes load-bearing at M8/M9.
+  if (frame) {
+    const [ox, oy] = frame.origin;
+    const u = unit(frame.direction);
+    const w = perp(u);
+    const big = Math.max(dataW, dataH) * 3 + 1;
+    const axis = (dx: number, dy: number, alpha: number): void => {
+      ctx.strokeStyle = `rgba(124,136,168,${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(tx(ox - dx * big), ty(oy - dy * big));
+      ctx.lineTo(tx(ox + dx * big), ty(oy + dy * big));
+      ctx.stroke();
+    };
+    axis(u[0], u[1], 0.38); // ∥ axis (the frame direction)
+    axis(w[0], w[1], 0.22); // ⊥ axis
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(158,168,198,0.85)';
+    ctx.beginPath();
+    ctx.arc(tx(ox), ty(oy), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillText('frame O', tx(ox) + 6, ty(oy) + 13);
+  }
 
   ctx.lineCap = 'round';
   ctx.font = '11px ui-monospace, monospace';

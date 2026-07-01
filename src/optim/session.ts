@@ -15,11 +15,11 @@ import type { AssignmentMap, AssignmentPolicy } from '../core/assignment';
 import { policyFromConfig } from '../core/assignment';
 import { resolveAssignment, scoreExact, type Breakdown } from '../core/score';
 import { gradScore, scoreOnly } from '../core/gradient';
-import { adamStep } from './gd';
+import { adamStep, initAdam } from './gd';
 import {
   initPopulation,
   evolveStep,
-  bestMember,
+  bestExplorer,
   type Population,
   type Member,
 } from './evolve';
@@ -135,8 +135,20 @@ export class Session {
         this.rng,
         this.cfg,
       );
+      // Champion adoption: only when an explorer DECISIVELY beats the displayed champion (member 0).
+      // This is the sole source of a visible display jump — a genuine breakthrough, not member-flicker.
+      const explorer = bestExplorer(this.pop);
+      const champ = this.pop.members[0]!;
+      const fin = (x: number): number => (Number.isFinite(x) ? x : -Infinity);
+      if (explorer && fin(explorer.score) > fin(champ.score) + this.cfg.evolve.adoptMargin) {
+        this.pop.members[0] = {
+          figure: cloneFigure(explorer.figure),
+          adam: initAdam(),
+          score: explorer.score,
+        };
+      }
     }
-    this.best = bestMember(this.pop);
+    this.best = this.pop.members[0]!; // the displayed champion (a smooth trajectory)
     if (pushScore(this.conv, this.best.score, this.cfg.converge)) {
       this.status = 'converged';
     }

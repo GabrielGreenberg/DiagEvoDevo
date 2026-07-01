@@ -50,12 +50,13 @@ export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
     .map((p) => `${p.name}: ${p.value.toFixed(3)}×${p.weight}`)
     .join(' · ');
 
-  root.innerHTML = `<h3>Score <span class="muted">S = reward − Σpenalty</span></h3>
+  root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩</span></h3>
     <div class="scoretop">
       <div class="bignum"><span class="biglabel">quality</span><span class="bigval">${pct(b.quality)}</span></div>
-      <div class="bignum"><span class="biglabel">total</span><span class="bigval">${b.total.toFixed(3)}</span></div>
+      <div class="bignum"><span class="biglabel">total</span><span class="bigval">${b.total.toFixed(3)} / ${b.maxReward.toFixed(0)}</span></div>
     </div>
     <div class="qualtrack"><span class="qualbar" style="width:${(100 * b.quality).toFixed(1)}%"></span></div>
+    <div class="comphdr muted">both data relations compared, like-with-like (Σ over the product structure):</div>
     ${assignments}
     <div class="penrow muted">penalties (off): ${penalties}</div>
     <div class="statusrow muted">step ${d.steps} · T ${d.temperature.toFixed(2)} · ${d.mode}</div>`;

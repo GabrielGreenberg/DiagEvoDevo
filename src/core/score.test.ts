@@ -90,6 +90,49 @@ describe('score: non-invariant perturbations strictly lower the reward', () => {
   });
 });
 
+describe('score: capturing MORE structure scores strictly higher (doubled-up matches)', () => {
+  // both dimensions match (golden) vs only ONE dimension matching.
+  const scrambleX = (): Figure => {
+    // perfect lengths, but the x-positions are in the WRONG order (value matches, order broken)
+    const f = cloneFigure(golden);
+    const perm = [5, 0, 9, 2, 11, 1, 7, 3, 10, 4, 8, 6];
+    for (let i = 0; i < 12; i++) {
+      const b = segBase(i);
+      const x = 5 + perm[i]! * 10;
+      f[b] = x;
+      f[b + 2] = x;
+    }
+    return f;
+  };
+  const flattenHeights = (): Figure => {
+    // x-positions correct (order matches), but all lengths equal (value/ratio structure broken)
+    const f = cloneFigure(golden);
+    for (let i = 0; i < 12; i++) {
+      const b = segBase(i);
+      f[b + 3] = f[b + 1]! + 100;
+    }
+    return f;
+  };
+  it('both dimensions match > only value matches > only order matches', () => {
+    const both = scoreExact(golden, data, map).total;
+    const valueOnly = scoreExact(scrambleX(), data, map).total;
+    const orderOnly = scoreExact(flattenHeights(), data, map).total;
+    expect(both).toBeGreaterThan(valueOnly + 1e-6); // adding a correct order lifts the score
+    expect(both).toBeGreaterThan(orderOnly + 1e-6); // adding correct values lifts the score
+    // the value dimension (3 rungs, max 7) is worth more than the order dimension (1 rung, max 1)
+    expect(valueOnly).toBeGreaterThan(orderOnly);
+  });
+  it('the increment from getting order right equals the order reward gained', () => {
+    const withOrder = scoreExact(golden, data, map);
+    const withoutOrder = scoreExact(scrambleX(), data, map);
+    const orderGain =
+      withOrder.assignments.find((a) => a.key === 'order')!.reward -
+      withoutOrder.assignments.find((a) => a.key === 'order')!.reward;
+    expect(withOrder.total - withoutOrder.total).toBeCloseTo(orderGain, 6); // additive across dimensions
+    expect(orderGain).toBeGreaterThan(0);
+  });
+});
+
 describe('score: penalties are wired but zero-weighted (no effect on v1 total)', () => {
   it('all penalties are 0 at default weights; total = reward', () => {
     const b = scoreExact(golden, data, map);

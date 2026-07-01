@@ -63,8 +63,10 @@ export function initPopulation(
 const finite = (x: number): number => (Number.isFinite(x) ? x : -Infinity);
 
 /**
- * One outer generation: re-score all members, keep the top half, and replace the bottom half with a
- * mix of fresh random restarts and mutations of top members (Adam state reset for the replacements).
+ * One outer generation. Member 0 is the PROTECTED champion (the displayed trajectory) and is never
+ * culled; among the EXPLORERS (members 1..N−1) we keep the top half and replace the bottom half with a
+ * mix of fresh random restarts and mutations of top explorers (Adam state reset for replacements).
+ * With populationSize 1 there are no explorers and this is a no-op — a pure single trajectory.
  */
 export function evolveStep(
   pop: Population,
@@ -73,29 +75,42 @@ export function evolveStep(
   cfg: Config = config,
 ): Population {
   for (const m of pop.members) m.score = finite(evalScore(m.figure));
-  pop.members.sort((a, b) => b.score - a.score);
-  const size = pop.members.length;
+  const champion = pop.members[0]!;
+  const explorers = pop.members.slice(1);
+  explorers.sort((a, b) => b.score - a.score);
+  const size = explorers.length;
   const keep = Math.max(1, Math.ceil(size / 2));
   const sigmaAbs = cfg.evolve.mutationSigma * (cfg.figureInit.max - cfg.figureInit.min);
   for (let k = keep; k < size; k++) {
     if ((k - keep) % 2 === 0) {
-      pop.members[k] = { figure: randomFigure(rng, cfg), adam: initAdam(), score: -Infinity };
+      explorers[k] = { figure: randomFigure(rng, cfg), adam: initAdam(), score: -Infinity };
     } else {
-      const parent = pop.members[(k - keep) % keep]!;
-      pop.members[k] = {
+      const parent = explorers[(k - keep) % keep]!;
+      explorers[k] = {
         figure: mutateFigure(parent.figure, sigmaAbs, rng),
         adam: initAdam(),
         score: -Infinity,
       };
     }
   }
+  pop.members = [champion, ...explorers];
   pop.generation += 1;
   return pop;
 }
 
-/** The best (highest-scoring) member. */
+/** The best (highest-scoring) member overall. */
 export function bestMember(pop: Population): Member {
   let best = pop.members[0]!;
   for (const m of pop.members) if (finite(m.score) > finite(best.score)) best = m;
+  return best;
+}
+
+/** The best EXPLORER (members 1..N−1), or null if there are none. */
+export function bestExplorer(pop: Population): Member | null {
+  let best: Member | null = null;
+  for (let k = 1; k < pop.members.length; k++) {
+    const m = pop.members[k]!;
+    if (!best || finite(m.score) > finite(best.score)) best = m;
+  }
   return best;
 }
