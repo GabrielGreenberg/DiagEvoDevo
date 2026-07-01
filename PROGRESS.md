@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M1 COMPLETE (data + figure + frame). M2 in progress.
+## Status: M2 COMPLETE (scale lattice + 26-measurement stock). M3 in progress.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -24,8 +24,11 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       Gate: seed→dataset/figure deterministic; property tests on ranges. **DONE:** 13 tests;
       byte-identical determinism, strict positivity, endpoints in box, canonical `[sx,sy,ex,ey]×12`
       accessors, frame constructors + `unit`/`perp` geometry helpers.
-- [ ] **M2 — Scale & measurements.** `scale.ts`, measurement registry, the 4 readings,
-      the 2×4×4 stock with the 6 undefined. Gate: census + coincidence invariants.
+- [x] **M2 — Scale & measurements.** `scale.ts`, measurement registry, the 4 readings,
+      the 2×4×4 stock with the 6 undefined. Gate: census + coincidence invariants. **DONE:** 20 tests
+      (scale 8 + measurements 12); census 15/6/5 counted from the product; undefined-6 exact;
+      length anchor-free; run/rise/tilt iff frame∥page; differentiable `extractValue` matches plain
+      `extract` on all 26. `ScaleType` enum + 4×4 reads-down table (cyclic isolated), commensurability.
 - [ ] **M3 — Fidelity ladder.** `fOrd/fInt/fRatio` (differentiable forms written against the
       autograd `Value` type), exact forms for display, rungs + weights, data-capped height.
       Gate: all ladder + nesting invariants.
@@ -75,8 +78,9 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M2 — Scale & measurements. `scale.ts` (ScaleType, reads-down 4×4 partial order with cyclic isolated,
-`commensurability`), `measurements/{types,readings,registry}`: build the 32-cell grid, drop the 6
-undefined (`page×{start,end,midpoint}×{magnitude,angle}`), stamp the 26 live, `extract`+`extractValue`.
-Gate: exactly 26 live; census 15 ratio / 6 interval / 5 cyclic; length anchor-free; run/rise/tilt
-identical iff frame∥page; cross-reading vector unconstructable. Do not skip gates.
+M3 — Fidelity ladder. `fidelity/ladder.ts` differentiable `fOrd` (logistic pairwise surrogate, sign
+is a constant off-tape, tied pairs in denominator), `fInt` (sqrt-free r²), `fRatio`
+(exp(−Var(logc−logv)/σ₀²), positive carriers only) + exact display forms (Kendall τ for fOrd).
+`fidelity/rungs.ts`: registered rungs + weights, height-capped by DATA scale type (sales→3, order→1).
+Gate: all ladder invariants + nesting (F_ratio=1⇒F_int=1⇒F_ord=1) + surrogate→exact as T→0 +
+∇F_ord flat-in-order/steep-across-inversion. Do not skip gates.
