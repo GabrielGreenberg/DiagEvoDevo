@@ -15,7 +15,7 @@
 // per-relation / per-measurement breakdown for the panel). The only value-fork is the ordinal rung
 // (logistic surrogate vs exact Kendall τ).
 
-import { Value, val, add, sub } from './autograd/engine';
+import { Value, val, add, sub, div } from './autograd/engine';
 import { config, type Config } from '../config';
 import type { DataSet } from './data';
 import type { Figure } from './figure';
@@ -76,13 +76,20 @@ export function scoreValue(
   frame: PositedFrame = frameFromConfig(cfg),
   page: Page = pageFromConfig(cfg),
 ): ScoreValue {
+  // PER-RELATION NORMALIZED sum: each relation contributes relSum / relMax ∈ [0,1], so relations with
+  // more (or richer) commensurable measurements don't drown the others. Within a relation, matching
+  // more measurements still raises relSum. Total ∈ [0, #relations].
   let reward: Value = val(0);
   for (const rel of dataRelations(data)) {
     const v = Array.from(rel.datavec, (x) => val(x));
-    for (const m of measurementsFor(rel, cfg)) {
+    const ms = measurementsFor(rel, cfg);
+    const relMax = ms.length * maxRewardFor(rel.type, cfg);
+    let relSum: Value = val(0);
+    for (const m of ms) {
       const c = m.extractValue(leaves, frame, page);
-      reward = add(reward, rewardValue(c, v, rel.type, cfg).total);
+      relSum = add(relSum, rewardValue(c, v, rel.type, cfg).total);
     }
+    reward = add(reward, div(relSum, val(relMax || 1)));
   }
   const penalty = totalPenaltyValue(leaves, penaltyContext(data, cfg, frame, page)).total;
   return { total: sub(reward, penalty), reward, penalty };
@@ -100,16 +107,17 @@ export interface MeasurementScore {
 export interface RelationBreakdown {
   key: 'sales' | 'order';
   dataType: ScaleType;
-  reward: number; // Σ over the relation's measurements
-  maxReward: number; // count × max-rung-reward
+  reward: number; // Σ over the relation's measurements (raw)
+  maxReward: number; // count × max-rung-reward (the relation's attainable ceiling)
+  normalized: number; // reward / maxReward ∈ [0,1] — this relation's contribution to the total
   measurements: MeasurementScore[]; // sorted by reward, best first
 }
 
 export interface Breakdown {
   total: number; // reward − penalty
-  reward: number;
+  reward: number; // Σ over relations of (relReward / relMax) ∈ [0, #relations]
   penalty: number;
-  maxReward: number; // theoretical ceiling (rarely attainable — the matrix has tension)
+  maxReward: number; // #relations (each normalized relation contributes ≤ 1)
   quality: number; // reward / maxReward ∈ [0,1]
   relations: RelationBreakdown[];
   penalties: PenaltyTermExact[];
@@ -123,8 +131,7 @@ export function scoreExact(
   page: Page = pageFromConfig(cfg),
 ): Breakdown {
   const relations: RelationBreakdown[] = [];
-  let reward = 0;
-  let maxReward = 0;
+  let reward = 0; // Σ normalized relation contributions
   for (const rel of dataRelations(data)) {
     const ms = measurementsFor(rel, cfg);
     const maxRung = maxRewardFor(rel.type, cfg);
@@ -136,11 +143,12 @@ export function scoreExact(
       measurements.push({ id: m.id, stamp: m.stamp, reward: re.total, rungs: re.rungs });
     }
     measurements.sort((a, b) => b.reward - a.reward);
-    const relMax = ms.length * maxRung;
-    relations.push({ key: rel.key, dataType: rel.type, reward: relReward, maxReward: relMax, measurements });
-    reward += relReward;
-    maxReward += relMax;
+    const relMax = ms.length * maxRung || 1;
+    const normalized = relReward / relMax;
+    relations.push({ key: rel.key, dataType: rel.type, reward: relReward, maxReward: relMax, normalized, measurements });
+    reward += normalized;
   }
+  const maxReward = relations.length; // each relation contributes ≤ 1
   const pen = totalPenaltyExact(figure, penaltyContext(data, cfg, frame, page));
   const total = reward - pen.total;
   return {

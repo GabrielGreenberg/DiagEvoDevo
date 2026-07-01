@@ -20,10 +20,14 @@ const salesRel = (f: Figure, cfg = config): RelationBreakdown =>
   scoreExact(f, data, cfg).relations.find((r) => r.key === 'sales')!;
 
 describe('score (fixed mode): golden bar chart scores the single-carrier max', () => {
-  it('reward = 8 (sales→length 7 + order→x-position 1); one measurement per relation', () => {
+  it('quality = 1 (both relations fully satisfied); one measurement per relation', () => {
     const b = scoreExact(golden, data, fixed);
-    expect(b.reward).toBeCloseTo(8, 6);
-    for (const rel of b.relations) expect(rel.measurements.length).toBe(1);
+    expect(b.quality).toBeCloseTo(1, 6); // normalized: sales 7/7 + order 1/1 = 2 of 2
+    expect(b.reward).toBeCloseTo(2, 6);
+    for (const rel of b.relations) {
+      expect(rel.measurements.length).toBe(1);
+      expect(rel.normalized).toBeCloseTo(1, 6);
+    }
   });
 });
 

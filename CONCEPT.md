@@ -92,9 +92,13 @@ length are ratio even on a bare page — and why a bar carries proportion with n
   marginals*, so we never loop over pairs — a fidelity term compares two 12-vectors.
 
 ### The funnel (share this with a colleague)
-`48 free parameters → 312 live measurements → 67 typed comparisons → 2 assigned → 4 numbers → 1 score`
-where **67** = the mode-capped measurement×mode combinations (see §6), and the pair axis
-collapses into the marginals.
+`48 free parameters → 312 live measurements → the full commensurable matrix → per-relation normalized sum → 1 score`
+where each data relation is compared, like-with-like, against **every** commensurable measurement (sales:ratio →
+the 20 with stamp ≥ ratio; order:ordinal → all 26), each such comparison graded on its rungs (§6), and the pair
+axis collapses into the marginals. The score is the **per-relation-normalized sum** over the whole matrix
+(§7): more geometric relations tracking the data ⇒ higher score, with each relation's contribution scaled to
+[0,1] so no relation drowns the others. (An earlier draft "assigned" one carrier per relation; that is now the
+optional `fixed` scoring mode, and `argmax` assignment is retained only for the invention lens.)
 
 ## 5. Like-with-like (commensurability)
 
@@ -158,19 +162,27 @@ spacing = log-or-√ scale (miss interval); right spacing/wrong zero = truncated
 decodability** (position > length > angle > area …) so weights are empirical, not chosen.
 Keep them in `config`; treat calibration as a first-class task, not a magic number.
 
-## 7. Assignment (and the invention mode)
+## 7. Comprehensive scoring (and the assignment lenses)
 
-An **assignment** maps each data relation to one measurement, **legal iff
-`type(data) ≤ stamp(measurement)`** (read a stamp down, never up).
+Legality is **`type(data) ≤ stamp(measurement)`** (read a stamp down, never up), over the reads-down
+order `ordinal ≤ interval ≤ ratio ≤ cyclic` — **cyclic is the top**: a bearing measured from the
+frame/page direction has a true zero (the reference direction) and its angle-magnitude carries
+proportion, so an angle can carry ratio (a dial/radial encoding), interval, and order. Thus
+sales (ratio) is commensurable with the 15 ratio + 5 cyclic = **20** measurements; order (ordinal)
+with **all 26**.
 
-- **FixedAssignment (bars):** sales → length (or height against a posited baseline);
-  order → page proj∥ (x-position). Deterministically yields bars. Use first.
-- **BestAssignment (invention):** score the figure under the *best legal* assignment,
-  `argmax_α reward(α)`. Lets the figure "choose" its encoding; this is where new diagram
-  kinds can emerge. Same data relation via `magnitude` (against a central origin) → a
-  radial plot; via `proj⊥` (against a baseline) → a dot/lollipop plot.
-
-Both must be pluggable policies behind one interface. Start Fixed; graduate to Best.
+- **Comprehensive scoring (default):** each data relation is scored against **all** its commensurable
+  measurements, like-with-like, and the results are summed **per-relation-normalized** (each relation's
+  raw sum ÷ its attainable max, so the relations compete evenly while, within a relation, matching more
+  measurements still wins). The diagram is a good homomorphism when *many* geometric relations track the
+  data at once; diagram kinds emerge as the configurations that satisfy the most of the matrix. (E.g.
+  driving length, run, rise, and their frame twins to all track value at once *forces the segments
+  parallel* — a common orientation emerges from the score itself, no penalty required.)
+- **Assignment lenses (optional):** the `fixed` mode collapses each relation to one configured carrier
+  (sales → length, order → x-position — the deterministic bar-chart model); `BestAssignment` argmaxes a
+  single carrier per relation (`argmax_α reward(α)`) — a lens for reading off *which* single encoding a
+  figure most resembles (radial via `magnitude`, dot/lollipop via `proj⊥`). Both are pluggable behind
+  one interface but are not the default objective.
 
 ## 8. The penalty book (deferred, but architected in now)
 

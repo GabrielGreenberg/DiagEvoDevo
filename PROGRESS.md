@@ -5,7 +5,24 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: ✅ v1 COMPLETE (M0–M7) + post-v1 refinements. GUI live; seeds evolve to faithful bars (quality→100%).
+## Status: ✅ v1 (M0–M7) + refinements + COMPREHENSIVE-SCORING refactor. 136 tests green.
+
+### Comprehensive matrix score (user redirection, 2026-07-01)
+The score no longer collapses to one carrier per relation — it is the **full commensurable matrix**,
+per-relation-normalized (user's choices: *sum within a relation → more matches wins*; *order readable
+from angles → cyclic on top*; *normalize per relation* to balance; *frame stays at page origin*).
+- **scale.ts:** reads-down chain is now `ordinal ≤ interval ≤ ratio ≤ cyclic` (cyclic TOP — a bearing
+  from the reference carries ratio+order). sales→20 measurements (15 ratio+5 cyclic), order→all 26.
+- **ladder fRatio:** positivity floor `log(max(c, eps.ratioPos))` (new `maxConst` primitive, gradchecked)
+  so signed carriers (run/rise/projections/bearings) score without NaN.
+- **score.ts:** comprehensive (default) = Σ_relations (Σ_measurements rewardValue)/relMax; `fixed` mode
+  kept as a swappable single-carrier option. `Breakdown`→`relations[]` w/ per-measurement fidelities +
+  `normalized`. gradient/session drop the single-carrier map; scorePanel shows the matrix + top carriers.
+- **converge:** RELATIVE plateau (score is now O(1) normalized); `populationSize 8→4`, `stepsPerFrame 20→4`
+  (matrix ≈ 15k autograd nodes/eval, ~10× heavier).
+- **Result:** value encoded richly (several ratios track it) AND order encodes (best carrier ~0.97);
+  emergent common orientation (parallel segments) arises from the matrix, not a penalty. quality ~65–70%.
+  **Known:** ~10× slower than fixed mode — optimize later if needed. CONCEPT §4 funnel + §7 updated.
 
 ### Post-v1 refinements (user review, 2026-07-01)
 1. **Score monotonicity confirmed + tested.** Both data relations (order + value) are scored and additive:

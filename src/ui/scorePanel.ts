@@ -56,7 +56,7 @@ export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
       return `<div class="assign">
         <div class="ahead"><b>${rel.key}</b> (${rel.dataType})
           <span class="muted">${rel.measurements.length} commensurable</span>
-          <span class="areward">${rel.reward.toFixed(1)} / ${rel.maxReward.toFixed(0)}</span></div>
+          <span class="areward">${(100 * rel.normalized).toFixed(0)}% · ${rel.reward.toFixed(1)}/${rel.maxReward.toFixed(0)}</span></div>
         <div class="matchline muted">${nMatch} tracking (fidelity ≥ ${MATCH})</div>
         ${top}
       </div>`;
@@ -65,7 +65,7 @@ export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
 
   root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩ — full matrix</span></h3>
     <div class="scoretop">
-      <div class="bignum"><span class="biglabel">reward</span><span class="bigval">${b.reward.toFixed(1)}</span></div>
+      <div class="bignum"><span class="biglabel">quality</span><span class="bigval">${(100 * b.quality).toFixed(0)}%</span></div>
       <div class="bignum"><span class="biglabel">tracking</span><span class="bigval">${matching}/${totalMeas}</span></div>
     </div>
     <div class="qualtrack"><span class="qualbar" style="width:${(100 * b.quality).toFixed(1)}%"></span></div>

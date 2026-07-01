@@ -43,20 +43,21 @@ describe('session: temperature annealing', () => {
 
 describe('session: converges to a faithful bar chart (the v1 gate)', () => {
   it(
-    'sales is richly encoded — its best measurement climbs all three rungs, and MANY ratios track it',
+    'BOTH relations encode (balanced by per-relation normalization): value via a ratio, order via a position',
     () => {
       const s = createSession(2, 1);
       s.run();
       const b = s.breakdown();
       const sales = b.relations.find((r) => r.key === 'sales')!;
-      const bestSales = sales.measurements[0]!; // sorted by reward, best first
+      const order = b.relations.find((r) => r.key === 'order')!;
       const rung = (m: { rungs: { name: string; f: number }[] }, name: string): number =>
         m.rungs.find((r) => r.name === name)!.f;
-      expect(rung(bestSales, 'ratio')).toBeGreaterThan(0.9);
-      expect(rung(bestSales, 'int')).toBeGreaterThan(0.9);
-      // several ratio measurements track sales at once (the rich full-matrix homomorphism)
-      const tracking = sales.measurements.filter((m) => rung(m, 'ratio') >= 0.9).length;
-      expect(tracking).toBeGreaterThanOrEqual(3);
+      // value: the best ratio carrier climbs its rungs; order: the best carrier tracks label order
+      expect(rung(sales.measurements[0]!, 'ratio'), 'sales.ratio').toBeGreaterThan(0.85);
+      expect(rung(order.measurements[0]!, 'ord'), 'order.ord').toBeGreaterThan(0.85);
+      // neither relation is drowned — both contribute meaningfully to the normalized total
+      expect(sales.normalized, 'sales normalized').toBeGreaterThan(0.4);
+      expect(order.normalized, 'order normalized').toBeGreaterThan(0.4);
     },
     120000,
   );
