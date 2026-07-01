@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M0 COMPLETE (autograd engine built + gradchecked). M1 in progress.
+## Status: M1 COMPLETE (data + figure + frame). M2 in progress.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -20,8 +20,10 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       is written against it. Gate: `check` green on stubs; `gradcheck` passes on every primitive.
       **DONE:** 36 tests green; gradcheck covers all 13 primitives + 9 derived ops + composition +
       self-test (bites on wrong grads) + 50k-node deep graph (iterative topo-sort, no overflow).
-- [ ] **M1 — Data & Figure.** `data.ts`, `figure.ts`, seed generators, scale metadata.
-      Gate: seed→dataset/figure deterministic; property tests on ranges.
+- [x] **M1 — Data & Figure.** `data.ts`, `figure.ts`, seed generators, scale metadata.
+      Gate: seed→dataset/figure deterministic; property tests on ranges. **DONE:** 13 tests;
+      byte-identical determinism, strict positivity, endpoints in box, canonical `[sx,sy,ex,ey]×12`
+      accessors, frame constructors + `unit`/`perp` geometry helpers.
 - [ ] **M2 — Scale & measurements.** `scale.ts`, measurement registry, the 4 readings,
       the 2×4×4 stock with the 6 undefined. Gate: census + coincidence invariants.
 - [ ] **M3 — Fidelity ladder.** `fOrd/fInt/fRatio` (differentiable forms written against the
@@ -73,8 +75,8 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M1 — Data & Figure. Implement `data.ts` (seedToDataSet: 12 positive ratio values, labels A..L),
-`figure.ts` (Float64Array(48), canonical `[sx,sy,ex,ey]×12` index layout as a shared constant,
-seedToFigure, accessors for start/end/midpoint/displacement), `frame.ts` (Page + fixed
-PositedFrame). Adversarial gate: determinism (byte-identical across runs from same seed), strict
-positivity of data values, endpoints within the init box, different seeds differ. Do not skip gates.
+M2 — Scale & measurements. `scale.ts` (ScaleType, reads-down 4×4 partial order with cyclic isolated,
+`commensurability`), `measurements/{types,readings,registry}`: build the 32-cell grid, drop the 6
+undefined (`page×{start,end,midpoint}×{magnitude,angle}`), stamp the 26 live, `extract`+`extractValue`.
+Gate: exactly 26 live; census 15 ratio / 6 interval / 5 cyclic; length anchor-free; run/rise/tilt
+identical iff frame∥page; cross-reading vector unconstructable. Do not skip gates.
