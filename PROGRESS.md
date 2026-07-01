@@ -153,14 +153,23 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-**v1 (M0–M7) is COMPLETE and verified.** `npm run dev` → live GUI; `npm run check` (140 tests) green;
-`npm run bench` (24/24 seeds converge, mean quality 0.999); `npm run gradcheck` trusts the AD engine.
-NOTE: v1 (penalties off) converges to bars "up to orientation/baseline" — the proportions + ordering +
-live score breakdown are the fidelity evidence; clean VERTICAL bars need `frozenDof` (M8, one config flip).
+**Working state:** M0–M7 + comprehensive matrix scoring (default) are done and verified.
+`npm run check` = **136 tests green**; `npm run dev` → live GUI at :5173; `npm run gradcheck` trusts the AD
+engine; `npm run bench` reports comprehensive convergence (slow: ~40–90 s/seed). See the Status section
+(top) for the comprehensive-scoring details and the four user choices that shaped it.
 
-Out of THIS run's scope (user chose M7 on 2026-07-01), available as the next run when desired:
-- **M8 — First penalty on.** Set `config.penalties.frozenDof > 0` (already fully wired + tested);
-  confirm it installs a shared baseline / common orientation → clean vertical bars emerge.
-- **M9 — BestAssignment (invention).** Flip `config.assignmentPolicy = 'best'` (policy already built);
-  confirm radial/dot-plot encodings emerge for suitable configs. May need argmax caching (perf).
-- **M10 — Weight calibration.** Anchor `w_ord/w_int/w_ratio` to Cleveland–McGill (flagged open problem).
+Most likely next step, and open menu (user's call which):
+- **Performance (flagged by the user).** The comprehensive score is ~10× heavier (~15k scalar-autograd
+  nodes/eval) → GUI ~10–15 fps, bench slow. Optimize the hot path: reuse each measurement's `extractValue`
+  across both relations (currently re-extracted), cut redundant work in the 46 `fOrd` × 66-pair loops
+  (biggest cost), or cache the graph structure. Self-contained; gate: bench wall-time ↓ with tests still green.
+- **Emergent diagram kinds.** The comprehensive optimum already shows a value-proportional parallel plot +
+  order via position. Explore what other seeds/data produce; wire the `BestAssignment` "which single kind
+  is this?" readout into the panel (policy already built).
+- **Penalty semantics under comprehensive.** `frozenDof`'s common-orientation effect now partly EMERGES
+  from the matrix (parallel segments); re-think what `spuriousness`/`economy` should mean when every
+  commensurable measurement is already scored. (All three still wired at weight 0.)
+- **Weight calibration (M10).** Anchor `w_ord/w_int/w_ratio` to Cleveland–McGill (flagged open problem).
+
+Fixed-mode note: `config.scoring = 'fixed'` restores the earlier single-carrier bar-chart model
+(sales→length, order→x-position), which converges fast to clean bars — kept as a swappable option.
