@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M3 COMPLETE (fidelity ladder + rungs). M4 in progress.
+## Status: M4 + M5 COMPLETE (score core + gradient wiring; adversarial review of score core run). M6 in progress.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -34,11 +34,14 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       Gate: all ladder + nesting invariants. **DONE:** 20 tests; ratio/int/ord invariants, nesting,
       surrogate→exact as T→0, r² sign-blindness documented, ∇F_ord landscape, height-cap (sales→3,
       order→1), weight ordering asserted. `ladder.ts` (diff + exact) + `rungs.ts` (reward composition).
-- [ ] **M4 — Assignment & score.** commensurability, FixedAssignment, `score.ts` with the
+- [x] **M4 — Assignment & score.** commensurability, FixedAssignment, `score.ts` with the
       penalty registry (terms wired, zero-weighted). Gate: golden bar chart scores max;
-      scale/shift invariance.
-- [ ] **M5 — Gradient wiring.** Collect the 48 leaf grads from the score graph into the
-      optimizer-facing ∇S; gradient-goes-downhill test. (Engine already built in M0.)
+      scale/shift invariance. **DONE:** 19 tests; golden maxed, 4 invariances exact, perturbations
+      lower, penalties sane + weight-on effect, BestAssignment pluggable. Adversarial workflow run.
+- [x] **M5 — Gradient wiring.** Collect the 48 leaf grads from the score graph into the
+      optimizer-facing ∇S; gradient-goes-downhill test. (Engine already built in M0.) **DONE:**
+      6 tests; full-score gradcheck ‖∇_ad−∇_fd‖<1e-5, uphill ascent, translation ⟂ (exact),
+      scale residual = surrogate (→0 as T→0), all 48 leaves live, NaN-safe on short segments.
 - [ ] **M6 — Optimizer.** Adam + evolution/restarts + convergence-on-plateau. Gate:
       multi-seed convergence to bars.
 - [ ] **M7 — GUI.** canvas + data panel + score panel + controls + persistence. Gate:
@@ -69,6 +72,12 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
   the through-μ term vanishes because Σ(xᵢ−μ)=0 (μ is the stationary point of the squared-deviation
   sum). We still build reductions from a live `Value` mean for robustness/clarity, but it is not a
   correctness requirement (refines the math-core design note). Verified by a passing gradcheck.
+- **Finding (M5):** the EXACT reward is scale-k invariant, but the differentiable ordinal SURROGATE is
+  not (it depends on margins |cᵢ−cⱼ|/T, which scaling inflates). Translation is exactly invariant (it
+  preserves differences); scaling is only approximately so, with the residual shrinking as T→0. So the
+  only overall-scale signal in the gradient is the surrogate's mild pull to grow margins — the figure can
+  drift in scale along the valley floor while the SCORE plateaus. This is exactly why M6 detects a score
+  plateau, not parameter fixity. (Confirms the valley/plateau design.)
 - **Finding (M3):** the ordinal surrogate's gradient magnitude depends on each pair's MARGIN
   |cᵢ−cⱼ|/T, not on how wrong it is (sigmoid' is symmetric). It is strong only NEAR the decision
   boundary and saturates to ~0 for large margins either way — so F_ord "vetoes inversions but does
@@ -85,10 +94,10 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M4 — Assignment & score (+ penalties wired@0). `assignment.ts` (AssignmentPolicy interface,
-FixedAssignment default sales→length#9/order→x-pos#1, BestAssignment argmax pluggable non-default,
-legalCandidates via commensurability), `penalties/{registry,spuriousness,frozenDof,economy}` fully
-wired at weight 0, `score.ts` (S=reward−Σpenalties, {total, breakdown}). Gate: commensurability
-accept/reject; **golden bar chart** scores max reward under FixedAssignment; scale-k/horizontal-
-translation invariance (perturbation tests); each penalty sane on hand-built inputs; weight ordering.
-This is the highest-subtlety milestone → run an adversarial verification workflow on the score core.
+M6 — Optimizer. `optim/gd.ts` (Adam ASCENT — score is a reward; sign convention lives here once),
+`optim/evolve.ts` (population of seeded random restarts + gaussian mutation; pluggable assignment
+search, identity under Fixed), `optim/converge.ts` (score-plateau: converged ⇔ step≥minSteps ∧ window
+full ∧ max−min≤plateauEps), `optim/session.ts` (orchestrator seed→init→step→converge→result),
+`scripts/bench.ts`. Gate: ≥N seeds converge to TRUE 3-rung bars (not truncated/log pathology); detector
+fires on a hand-built valley trajectory (params drifting) and NOT on a slow monotone climb; bench
+reports steps/sec + convergence rate; reproducible from figure seed. Do not skip gates.
