@@ -27,7 +27,7 @@ export const ORD_RUNG: Rung = {
   name: 'ord',
   scaleType: ScaleType.Ordinal,
   weight: (cfg) => cfg.weights.w_ord,
-  fDiff: (c, v, cfg) => fOrd(c, v, cfg.T),
+  fDiff: (c, v, cfg) => fOrd(c, v, cfg.T, cfg.eps.corrVar),
   fExact: (c, v) => fOrdExact(c, v),
 };
 

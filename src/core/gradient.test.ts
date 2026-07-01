@@ -99,10 +99,10 @@ describe('gradient: ∇S orthogonal to the invariant directions (CONCEPT §9)', 
       }
       return Math.abs(dot) / (Math.sqrt(gn) * Math.sqrt(xn) + 1e-30);
     };
-    const relBig = scaleRel(0.1);
-    const relSmall = scaleRel(0.004);
-    expect(relBig).toBeLessThan(1e-3); // already small at the default T
-    expect(relSmall).toBeLessThan(relBig); // and shrinks toward the scale-invariant exact score as T→0
+    // The spread-normalized ordinal surrogate is ITSELF scale-invariant, so ∇S ⟂ scale to machine
+    // precision at every temperature (the M5 residual that motivated normalization is now gone: ~1e-13).
+    expect(scaleRel(0.1)).toBeLessThan(1e-6);
+    expect(scaleRel(0.004)).toBeLessThan(1e-6);
   });
 });
 

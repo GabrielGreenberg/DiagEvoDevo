@@ -90,18 +90,27 @@ describe('ladder: ordinal rung', () => {
       expect(fOrdExact(arr(v.map(g)), arr(v))).toBeCloseTo(base, 12);
     }
   });
-  it('differentiable surrogate → exact as T → 0', () => {
-    const rng = mulberry32(6);
-    const v = randPositiveVec(rng);
-    const c = randPositiveVec(rng); // generic, non-tied
-    const exact = fOrdExact(arr(c), arr(v));
+  it('differentiable surrogate → exact as T → 0 (T is now the dimensionless, spread-normalized temp)', () => {
+    // well-separated permutations so a small normalized temperature saturates the sigmoids cleanly
+    const c = [12, 5, 9, 1, 7, 3, 11, 2, 8, 4, 10, 6];
+    const vv = [1, 8, 3, 10, 5, 12, 2, 9, 4, 11, 6, 7];
+    const exact = fOrdExact(arr(c), arr(vv));
     let prevErr = Infinity;
     for (const T of [0.5, 0.1, 0.02, 0.004]) {
-      const err = Math.abs(fOrd(V(c), V(v), T).data - exact);
+      const err = Math.abs(fOrd(V(c), V(vv), T).data - exact);
       expect(err).toBeLessThanOrEqual(prevErr + 1e-9); // monotone-ish convergence
       prevErr = err;
     }
     expect(prevErr).toBeLessThan(1e-3);
+  });
+
+  it('is scale-invariant (spread-normalized): F_ord(k·c, v) = F_ord(c, v) for k>0', () => {
+    const c = [12, 5, 9, 1, 7, 3, 11, 2, 8, 4, 10, 6];
+    const vv = [1, 8, 3, 10, 5, 12, 2, 9, 4, 11, 6, 7];
+    const base = fOrd(V(c), V(vv), 0.1).data;
+    for (const k of [0.001, 1000]) {
+      expect(fOrd(V(c.map((x) => k * x)), V(vv), 0.1).data).toBeCloseTo(base, 8);
+    }
   });
 });
 
@@ -158,9 +167,9 @@ describe('ladder: ∇F_ord landscape (flat-in-order, corrective across inversion
   // near boundaries. This is exactly why evolution/restarts handle global ordering while GD polishes.
   const v = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
 
-  it('flat (tiny gradient) for a correctly-ordered, confident c', () => {
-    const c = V(v); // unit margins, T=0.1 ⇒ saturated
-    const f = fOrd(c, V(v), config.T);
+  it('flat (tiny gradient) for a correctly-ordered, confident c at a sharp (small) temperature', () => {
+    const c = V(v); // unit margins; at a small (sharp) T the sigmoids saturate ⇒ negligible gradient
+    const f = fOrd(c, V(v), 0.005);
     backward(f);
     const gnorm = Math.hypot(...c.map((x) => x.grad));
     expect(f.data).toBeGreaterThan(0.99);
@@ -207,8 +216,8 @@ describe('rungs: height-cap by data scale type', () => {
   it('a perfect ratio carrier attains the max 3-rung reward', () => {
     const v = [5, 3, 9, 1, 7, 11, 2, 8, 6, 10, 4, 12];
     const c = v.map((x) => 2.5 * x); // c = k·v ⇒ all rungs 1
-    const rw = rewardValue(V(c), V(v), ScaleType.Ratio, config);
-    expect(rw.total.data).toBeCloseTo(maxRewardFor(ScaleType.Ratio, config), 6);
+    const rw = rewardValue(V(c), V(v), ScaleType.Ratio, { ...config, T: 0.005 }); // sharp ⇒ ord≈1
+    expect(rw.total.data).toBeCloseTo(maxRewardFor(ScaleType.Ratio, config), 4);
     const re = rewardExact(arr(c), arr(v), ScaleType.Ratio, config);
     expect(re.total).toBeCloseTo(maxRewardFor(ScaleType.Ratio, config), 6);
     expect(re.rungs.map((r) => r.name)).toEqual(['ord', 'int', 'ratio']);

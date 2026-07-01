@@ -9,7 +9,7 @@
 // optimizer uses the logistic surrogate; they agree only as T→0. Everywhere else the two forms are
 // the same formula (Value vs number), and a test pins fXExact ≈ fX(...).data.
 
-import { Value, val, sub, mul, div, neg, exp, log, sigmoid } from '../autograd/engine';
+import { Value, val, add, sub, mul, div, neg, exp, log, sigmoid, sqrt } from '../autograd/engine';
 import { mean, variance, r2 } from '../autograd/ops';
 import { meanN, varianceN } from '../statsN';
 
@@ -17,18 +17,23 @@ import { meanN, varianceN } from '../statsN';
 
 /**
  * Ordinal rung, differentiable surrogate:
- *   F_ord ≈ mean_{i<j} σ( sign(vᵢ−vⱼ) · (cᵢ−cⱼ) / T ).
- * sign(vᵢ−vⱼ) is a CONSTANT read off the (fixed) data — it must never be on the tape (sign has zero
- * gradient a.e. and is undefined at 0). Tied data pairs (sign 0) contribute σ(0)=0.5 and stay in the
- * denominator, so the surrogate matches the exact "ties count 0.5" convention. → exact F_ord as T→0.
+ *   F_ord ≈ mean_{i<j} σ( sign(vᵢ−vⱼ) · (cᵢ−cⱼ) / (T · spread(c)) ),   spread(c) = √(Var(c)+ε).
+ *
+ * The margin is normalized by the SPREAD of c so the temperature T is dimensionless and the surrogate
+ * is SCALE-INVARIANT — exactly like the exact Kendall form (order is a scale-free property). Without
+ * this, a carrier spanning [0,100] with T=0.1 saturates every pair's sigmoid (argument ~ hundreds),
+ * killing the ordinal gradient so the optimizer can never sort the carrier. sign(vᵢ−vⱼ) is a CONSTANT
+ * read off the fixed data (never on the tape; sign has zero gradient a.e.). Tied data pairs (sign 0)
+ * contribute σ(0)=0.5 and stay in the denominator (matches "ties count 0.5"). → exact F_ord as T→0.
  */
-export function fOrd(c: Value[], v: Value[], T: number): Value {
+export function fOrd(c: Value[], v: Value[], T: number, spreadEps = 1e-12): Value {
   const n = c.length;
+  const denom = mul(val(T), sqrt(add(variance(c), val(spreadEps)))); // T · spread(c)
   const terms: Value[] = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const s = Math.sign(v[i]!.data - v[j]!.data); // constant, off-tape
-      const diff = div(sub(c[i]!, c[j]!), val(T));
+      const diff = div(sub(c[i]!, c[j]!), denom);
       terms.push(sigmoid(mul(val(s), diff)));
     }
   }

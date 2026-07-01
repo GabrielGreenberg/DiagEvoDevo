@@ -25,10 +25,22 @@ export const config = {
   },
 
   // ── Ladder surrogate parameters ──────────────────────────────────────────
-  // T: logistic temperature for the differentiable F_ord surrogate (→ exact as T→0).
+  // T: dimensionless logistic temperature for the differentiable F_ord surrogate. The margin is
+  // normalized by spread(c), so T is scale-free (→ exact F_ord as T→0). This is the FINAL (annealed-to)
+  // temperature; the optimizer anneals T from anneal.tStart down to this value (see below).
   T: 0.1,
   // σ₀² in F_ratio = exp(−Var(log c − log v)/σ₀²).
   sigma0Sq: 1.0,
+
+  // ── Ordinal temperature annealing (CONCEPT §9: evolution/GD for global ordering) ──
+  // Early in a run a LARGE temperature keeps every pair in the sigmoid's responsive region, giving a
+  // global sorting force even on far-apart inversions; annealing T down to `T` sharpens to exact order.
+  // A continuation method that lets gradient descent sort the ordinal carrier (which it otherwise can't).
+  anneal: {
+    enabled: true,
+    tStart: 3.0, // initial (large) dimensionless temperature
+    tau: 250, // exponential decay time constant in steps: T(k) = T + (tStart−T)·exp(−k/tau)
+  },
 
   // ── Numerical ε-guards (each carries a modeling meaning; never inline them) ──
   eps: {

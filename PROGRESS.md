@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M4 + M5 COMPLETE (score core + gradient wiring; adversarial review of score core run). M6 in progress.
+## Status: M6 COMPLETE (optimizer converges to faithful bars, 24/24 seeds, mean quality 0.999). M7 in progress.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -42,8 +42,12 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       optimizer-facing ∇S; gradient-goes-downhill test. (Engine already built in M0.) **DONE:**
       6 tests; full-score gradcheck ‖∇_ad−∇_fd‖<1e-5, uphill ascent, translation ⟂ (exact),
       scale residual = surrogate (→0 as T→0), all 48 leaves live, NaN-safe on short segments.
-- [ ] **M6 — Optimizer.** Adam + evolution/restarts + convergence-on-plateau. Gate:
-      multi-seed convergence to bars.
+- [x] **M6 — Optimizer.** Adam + evolution/restarts + convergence-on-plateau. Gate:
+      multi-seed convergence to bars. **DONE:** `gd.ts` (Adam ascent), `evolve.ts` (population +
+      restarts + mutation), `converge.ts` (score-plateau), `session.ts` (orchestrator + T-annealing),
+      `scripts/bench.ts`. Bench: **24/24 seeds converge, mean quality 0.999, order sorted 22/24, 0
+      pathologies**. 15 optim tests: Adam ascent, plateau-fires-on-valley/not-on-slow-climb, evolution
+      reproducibility+elitism, session convergence to all-rungs bars, determinism, reset, annealing.
 - [ ] **M7 — GUI.** canvas + data panel + score panel + controls + persistence. Gate:
       manual — watch a seed evolve to bars, save, new seed.
 - [ ] **M8 — First penalty on.** Enable `frozenDof`; confirm it installs shared baseline.
@@ -83,12 +87,18 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
   The scale-nonorthogonality "finding" was correctly REFUTED (expected surrogate behavior, handled in M5).
   Regression tests in `degeneracy.test.ts` (7). Lesson: the log-repulsion holds for length>0 but NOT at
   exactly 0 — the ε-floor makes the invariant true AT zero, localizing degeneracy instead of poisoning all 48.
-- **Finding (M5):** the EXACT reward is scale-k invariant, but the differentiable ordinal SURROGATE is
-  not (it depends on margins |cᵢ−cⱼ|/T, which scaling inflates). Translation is exactly invariant (it
-  preserves differences); scaling is only approximately so, with the residual shrinking as T→0. So the
-  only overall-scale signal in the gradient is the surrogate's mild pull to grow margins — the figure can
-  drift in scale along the valley floor while the SCORE plateaus. This is exactly why M6 detects a score
-  plateau, not parameter fixity. (Confirms the valley/plateau design.)
+- **Major improvement (M6): spread-normalized + annealed ordinal surrogate.** The original `fOrd` used
+  ABSOLUTE margins (cᵢ−cⱼ)/T. Bench exposed the consequence: the order carrier (x-positions ~[0,100]) at
+  T=0.1 saturated every sigmoid (arg ~ hundreds) → dead ordinal gradient → x never sorted (order F_ord
+  stuck ~0.72). Fix (deepest layer): (1) normalize the margin by spread(c)=√(Var(c)+ε), making the
+  surrogate SCALE-INVARIANT (like exact Kendall — order is scale-free) and T dimensionless; (2) ANNEAL T
+  from `anneal.tStart`(3.0) → `T`(0.1) via exp decay (tau=250) in the session — hot T early gives a global
+  sorting force on far-apart inversions, cooling sharpens to exact order. Result: order sorts to 1.000 on
+  22/24 seeds (was ~0.72), mean quality 0.999. BONUS: normalization also eliminated the M5 scale-orthogonality
+  residual (grad·scale now ~1e-13). Ordinal `fOrd` differentiable tests now use small T (sharp) for the
+  saturated-limit assertions; exact Kendall unchanged.
+- **Finding (M5, superseded by the M6 normalization above):** the surrogate's scale-nonorthogonality came
+  from absolute margins; spread-normalization removed it. Translation was always exactly invariant.
 - **Finding (M3):** the ordinal surrogate's gradient magnitude depends on each pair's MARGIN
   |cᵢ−cⱼ|/T, not on how wrong it is (sigmoid' is symmetric). It is strong only NEAR the decision
   boundary and saturates to ~0 for large margins either way — so F_ord "vetoes inversions but does
@@ -105,10 +115,13 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M6 — Optimizer. `optim/gd.ts` (Adam ASCENT — score is a reward; sign convention lives here once),
-`optim/evolve.ts` (population of seeded random restarts + gaussian mutation; pluggable assignment
-search, identity under Fixed), `optim/converge.ts` (score-plateau: converged ⇔ step≥minSteps ∧ window
-full ∧ max−min≤plateauEps), `optim/session.ts` (orchestrator seed→init→step→converge→result),
-`scripts/bench.ts`. Gate: ≥N seeds converge to TRUE 3-rung bars (not truncated/log pathology); detector
-fires on a hand-built valley trajectory (params drifting) and NOT on a slow monotone climb; bench
-reports steps/sec + convergence rate; reproducible from figure seed. Do not skip gates.
+M7 — GUI (v1 done). `ui/{store,canvas,dataPanel,scorePanel,controls,app}`, `main.ts`, `index.html`,
+`persistence/store.ts`. Two-pane live GUI: canvas (12 evolving segments), data panel (A..L + values),
+score panel (live F_ord/F_int/F_ratio, exact F_ord labeled), controls (New Figure/Data Seed,
+Run/Pause/Step/Reset, Save/Load, editable seeds), rAF loop (session.step ×stepsPerFrame per frame,
+canvas every frame, DOM panels on store-notify). Save enabled on convergence; Save/Load round-trip
+honoring the stored config snapshot. Gate (manual): watch a seed evolve to bars, breakdown sensible,
+save/load works, new seed repeats. SELF-VERIFY FIRST via Preview MCP (start dev server, drive controls,
+screenshot convergence, check console), then present the live demo. NOTE: v1 (penalties off) converges
+to bars "up to orientation/baseline" — clean vertical bars need frozenDof (M8, out of scope); the
+proportions + ordering + live score breakdown are the fidelity evidence. Do not skip gates.

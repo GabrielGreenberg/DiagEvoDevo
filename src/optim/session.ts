@@ -1,5 +1,188 @@
 // src/optim/session.ts
-// Orchestrator: seed -> init -> step -> convergence -> result (M6)
-// Stub — implemented in a later milestone (see plan / ARCHITECTURE.md §Module map).
+//
+// The orchestrator: seed → init → step → convergence → result (ARCHITECTURE.md §optim). Composes the
+// Adam stepper, the evolution layer, the plateau detector, and the score. The GUI drives step() from
+// requestAnimationFrame; bench drives it in a headless loop. One step() = one inner optimizer step
+// (Adam over every member + periodic evolve generation + a convergence probe on the best score).
 
-export {};
+import { config, type Config } from '../config';
+import type { DataSet } from '../core/data';
+import { seedToDataSet } from '../core/data';
+import type { Figure } from '../core/figure';
+import { cloneFigure } from '../core/figure';
+import { pageFromConfig, frameFromConfig } from '../core/frame';
+import type { AssignmentMap, AssignmentPolicy } from '../core/assignment';
+import { policyFromConfig } from '../core/assignment';
+import { resolveAssignment, scoreExact, type Breakdown } from '../core/score';
+import { gradScore, scoreOnly } from '../core/gradient';
+import { adamStep } from './gd';
+import {
+  initPopulation,
+  evolveStep,
+  bestMember,
+  type Population,
+  type Member,
+} from './evolve';
+import { initConvergence, pushScore, type ConvergenceState } from './converge';
+import type { Rng } from '../core/rng';
+
+export type SessionStatus = 'idle' | 'running' | 'paused' | 'converged';
+
+export interface SessionResult {
+  figureSeed: number;
+  dataSeed: number;
+  figure: Figure; // best member's final figure
+  data: DataSet;
+  assignment: Record<string, string>; // resolved measurement ids
+  score: Breakdown; // exact breakdown of the final figure
+  converged: boolean;
+  convergedByCap: boolean; // hit maxSteps rather than a genuine plateau
+  steps: number;
+  configSnapshot: Config;
+}
+
+export class Session {
+  readonly figureSeed: number;
+  readonly dataSeed: number;
+  readonly data: DataSet;
+  readonly cfg: Config;
+  readonly policy: AssignmentPolicy;
+
+  status: SessionStatus = 'idle';
+  steps = 0;
+
+  private pop: Population;
+  private rng: Rng;
+  private conv: ConvergenceState;
+  private best: Member;
+  private readonly frame: ReturnType<typeof frameFromConfig>;
+  private readonly page: ReturnType<typeof pageFromConfig>;
+
+  constructor(figureSeed: number, dataSeed: number, cfg: Config = config) {
+    this.figureSeed = figureSeed;
+    this.dataSeed = dataSeed;
+    this.cfg = cfg;
+    this.data = seedToDataSet(dataSeed, cfg);
+    this.policy = policyFromConfig(cfg);
+    this.frame = frameFromConfig(cfg);
+    this.page = pageFromConfig(cfg);
+    const init = initPopulation(figureSeed, cfg.evolve.populationSize, cfg);
+    this.pop = init.pop;
+    this.rng = init.rng;
+    this.conv = initConvergence();
+    this.best = this.pop.members[0]!;
+  }
+
+  /** Best member's current figure (what the canvas renders). */
+  get figure(): Figure {
+    return this.best.figure;
+  }
+
+  /** Best member's differentiable score (the convergence signal). */
+  get bestScore(): number {
+    return this.best.score;
+  }
+
+  /** The resolved assignment map for the best figure. */
+  assignment(): AssignmentMap {
+    return resolveAssignment(this.policy, this.data, this.best.figure, this.cfg, this.frame, this.page);
+  }
+
+  /** Exact score breakdown of the best figure (for the score panel). Computed on demand. */
+  breakdown(): Breakdown {
+    return scoreExact(this.best.figure, this.data, this.assignment(), this.cfg, this.frame, this.page);
+  }
+
+  /** The current annealed temperature (large early → config.T late), for global ordinal sorting. */
+  temperature(): number {
+    const a = this.cfg.anneal;
+    if (!a || !a.enabled) return this.cfg.T;
+    return this.cfg.T + (a.tStart - this.cfg.T) * Math.exp(-this.steps / a.tau);
+  }
+
+  /** Config with the current annealed temperature substituted. */
+  private stepConfig(): Config {
+    const a = this.cfg.anneal;
+    if (!a || !a.enabled) return this.cfg;
+    return { ...this.cfg, T: this.temperature() };
+  }
+
+  /** One inner optimizer step. No-op once converged. */
+  step(): void {
+    if (this.status === 'converged') return;
+    this.status = 'running';
+    const stepCfg = this.stepConfig();
+    for (const m of this.pop.members) {
+      const map = resolveAssignment(this.policy, this.data, m.figure, stepCfg, this.frame, this.page);
+      const gs = gradScore(m.figure, this.data, map, stepCfg, this.frame, this.page);
+      m.figure = adamStep(m.figure, gs.grad, m.adam, stepCfg.adam);
+      m.score = gs.score;
+    }
+    this.steps += 1;
+    if (this.steps % this.cfg.evolve.outerEvery === 0) {
+      const ecfg = this.stepConfig();
+      evolveStep(
+        this.pop,
+        (f) =>
+          scoreOnly(
+            f,
+            this.data,
+            resolveAssignment(this.policy, this.data, f, ecfg, this.frame, this.page),
+            ecfg,
+            this.frame,
+            this.page,
+          ),
+        this.rng,
+        this.cfg,
+      );
+    }
+    this.best = bestMember(this.pop);
+    if (pushScore(this.conv, this.best.score, this.cfg.converge)) {
+      this.status = 'converged';
+    }
+  }
+
+  /** Run inner steps until converged or `maxBatch` steps elapse (used by bench / non-animated runs). */
+  run(maxBatch = Infinity): void {
+    let n = 0;
+    while (this.status !== 'converged' && n < maxBatch) {
+      this.step();
+      n += 1;
+    }
+  }
+
+  pause(): void {
+    if (this.status === 'running') this.status = 'paused';
+  }
+
+  reset(): void {
+    const init = initPopulation(this.figureSeed, this.cfg.evolve.populationSize, this.cfg);
+    this.pop = init.pop;
+    this.rng = init.rng;
+    this.conv = initConvergence();
+    this.best = this.pop.members[0]!;
+    this.steps = 0;
+    this.status = 'idle';
+  }
+
+  result(): SessionResult {
+    const assignment: Record<string, string> = {};
+    for (const [k, v] of this.assignment()) assignment[k] = v;
+    return {
+      figureSeed: this.figureSeed,
+      dataSeed: this.dataSeed,
+      figure: cloneFigure(this.best.figure),
+      data: this.data,
+      assignment,
+      score: this.breakdown(),
+      converged: this.conv.converged,
+      convergedByCap: this.conv.byCap,
+      steps: this.steps,
+      configSnapshot: JSON.parse(JSON.stringify(this.cfg)) as Config,
+    };
+  }
+}
+
+export function createSession(figureSeed: number, dataSeed: number, cfg: Config = config): Session {
+  return new Session(figureSeed, dataSeed, cfg);
+}

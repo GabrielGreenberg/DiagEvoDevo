@@ -41,10 +41,12 @@ describe('score: golden bar chart scores the max reward', () => {
     ]);
     expect(b.assignments.find((a) => a.key === 'order')!.rungs.map((r) => r.name)).toEqual(['ord']);
   });
-  it('differentiable reward ≈ exact reward (surrogate saturates for well-separated data)', () => {
-    const sv = scoreValue(leavesOf(golden), data, map);
-    const se = scoreExact(golden, data, map);
-    expect(Math.abs(sv.reward.data - se.reward)).toBeLessThan(0.02);
+  it('differentiable reward → exact reward as the (normalized) temperature sharpens', () => {
+    // At the default T the spread-normalized ordinal surrogate sits a little below the exact Kendall
+    // value; as T→0 it sharpens to agree. (The score panel shows the exact form regardless.)
+    const se = scoreExact(golden, data, map).reward;
+    const sharp: Config = { ...config, T: 0.005 };
+    expect(Math.abs(scoreValue(leavesOf(golden), data, map, sharp).reward.data - se)).toBeLessThan(0.01);
   });
 });
 
