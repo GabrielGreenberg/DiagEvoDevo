@@ -5,7 +5,7 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: M2 COMPLETE (scale lattice + 26-measurement stock). M3 in progress.
+## Status: M3 COMPLETE (fidelity ladder + rungs). M4 in progress.
 
 _Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
 
@@ -29,9 +29,11 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       (scale 8 + measurements 12); census 15/6/5 counted from the product; undefined-6 exact;
       length anchor-free; run/rise/tilt iff frame∥page; differentiable `extractValue` matches plain
       `extract` on all 26. `ScaleType` enum + 4×4 reads-down table (cyclic isolated), commensurability.
-- [ ] **M3 — Fidelity ladder.** `fOrd/fInt/fRatio` (differentiable forms written against the
+- [x] **M3 — Fidelity ladder.** `fOrd/fInt/fRatio` (differentiable forms written against the
       autograd `Value` type), exact forms for display, rungs + weights, data-capped height.
-      Gate: all ladder + nesting invariants.
+      Gate: all ladder + nesting invariants. **DONE:** 20 tests; ratio/int/ord invariants, nesting,
+      surrogate→exact as T→0, r² sign-blindness documented, ∇F_ord landscape, height-cap (sales→3,
+      order→1), weight ordering asserted. `ladder.ts` (diff + exact) + `rungs.ts` (reward composition).
 - [ ] **M4 — Assignment & score.** commensurability, FixedAssignment, `score.ts` with the
       penalty registry (terms wired, zero-weighted). Gate: golden bar chart scores max;
       scale/shift invariance.
@@ -67,6 +69,11 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
   the through-μ term vanishes because Σ(xᵢ−μ)=0 (μ is the stationary point of the squared-deviation
   sum). We still build reductions from a live `Value` mean for robustness/clarity, but it is not a
   correctness requirement (refines the math-core design note). Verified by a passing gradcheck.
+- **Finding (M3):** the ordinal surrogate's gradient magnitude depends on each pair's MARGIN
+  |cᵢ−cⱼ|/T, not on how wrong it is (sigmoid' is symmetric). It is strong only NEAR the decision
+  boundary and saturates to ~0 for large margins either way — so F_ord "vetoes inversions but does
+  not pull" once confidently ordered. This is precisely why global ordering needs evolution/restarts
+  (M6) while GD polishes the ratio/interval structure. (Refines the design's "∇F_ord≈0 in-order" note.)
 - **Baked-in v1 decisions** (from the approved plan): posited frame FIXED (∥ page) in v1;
   FixedAssignment sales→length (#9, no frame), order→x-position (#1); weights w_ord=1<w_int=2<w_ratio=4;
   one differentiable code path (plain-number path only for display; sole value-fork is exact F_ord).
@@ -78,9 +85,10 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
 
 ## Next action
-M3 — Fidelity ladder. `fidelity/ladder.ts` differentiable `fOrd` (logistic pairwise surrogate, sign
-is a constant off-tape, tied pairs in denominator), `fInt` (sqrt-free r²), `fRatio`
-(exp(−Var(logc−logv)/σ₀²), positive carriers only) + exact display forms (Kendall τ for fOrd).
-`fidelity/rungs.ts`: registered rungs + weights, height-capped by DATA scale type (sales→3, order→1).
-Gate: all ladder invariants + nesting (F_ratio=1⇒F_int=1⇒F_ord=1) + surrogate→exact as T→0 +
-∇F_ord flat-in-order/steep-across-inversion. Do not skip gates.
+M4 — Assignment & score (+ penalties wired@0). `assignment.ts` (AssignmentPolicy interface,
+FixedAssignment default sales→length#9/order→x-pos#1, BestAssignment argmax pluggable non-default,
+legalCandidates via commensurability), `penalties/{registry,spuriousness,frozenDof,economy}` fully
+wired at weight 0, `score.ts` (S=reward−Σpenalties, {total, breakdown}). Gate: commensurability
+accept/reject; **golden bar chart** scores max reward under FixedAssignment; scale-k/horizontal-
+translation invariance (perturbation tests); each penalty sane on hand-built inputs; weight ordering.
+This is the highest-subtlety milestone → run an adversarial verification workflow on the score core.
