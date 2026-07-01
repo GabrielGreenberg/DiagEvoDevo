@@ -229,9 +229,12 @@ export function atan2(y: Value, x: Value): Value {
   // a wrap).
   const out = new Value(Math.atan2(y.data, x.data), [y, x], 'atan2');
   out._backward = () => {
+    // r² = 0 only at the origin, where the bearing is genuinely undefined. Contribute a finite
+    // (zero) gradient there instead of 0/0 = NaN, which would poison every leaf sharing the tape.
     const r2 = x.data * x.data + y.data * y.data;
-    y.grad += (x.data / r2) * out.grad;
-    x.grad += (-y.data / r2) * out.grad;
+    const inv = r2 === 0 ? 0 : 1 / r2;
+    y.grad += x.data * inv * out.grad;
+    x.grad += -y.data * inv * out.grad;
   };
   return out;
 }

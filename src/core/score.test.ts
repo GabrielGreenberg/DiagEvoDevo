@@ -101,7 +101,9 @@ describe('score: penalties are wired but zero-weighted (no effect on v1 total)',
 
 describe('penalties: each computes a sane value on hand-built inputs', () => {
   it('frozenDof ≈ 0 for a shared baseline + common orientation; > 0 for drift', () => {
-    expect(frozenDof.valueExact(golden, penCtx)).toBeLessThan(1e-9); // golden: baseline 0, tilt all π/2
+    // golden: baseline 0, tilt all π/2 ⇒ frozenDof ≈ 0 AND ≥ 0 (penalty must never go negative)
+    expect(frozenDof.valueExact(golden, penCtx)).toBeGreaterThanOrEqual(0);
+    expect(frozenDof.valueExact(golden, penCtx)).toBeLessThan(1e-9);
     // drift: vary each start y (baseline spread), keep vertical
     const drift = cloneFigure(golden);
     for (let i = 0; i < 12; i++) {

@@ -7,8 +7,8 @@
 // A page-anchored point is read at its absolute position (interval); a difference (displacement, or a
 // point measured from a frame origin) has a true zero (ratio); a bearing is cyclic.
 
-import { Value, val, add, sub, mul, div, atan2, exp } from '../autograd/engine';
-import { logLength } from '../autograd/ops';
+import { Value, val, add, sub, mul, div, atan2, sqrt } from '../autograd/engine';
+import { config } from '../../config';
 import type { Figure } from '../figure';
 import { segBase, SEG } from '../figure';
 import type { PositedFrame } from '../frame';
@@ -56,7 +56,9 @@ export function readScalar(v: Vec2, reading: Reading, dir: readonly [number, num
   if (reading === 'projPar') return projPar;
   const projPerp = v.x * -u1 + v.y * u0; // dot with perp(u) = (-u1, u0)
   if (reading === 'projPerp') return projPerp;
-  if (reading === 'magnitude') return Math.hypot(v.x, v.y);
+  // magnitude floored by eps.length: sqrt(x²+y²+ε) — never exactly 0, so the ratio rung's log stays
+  // finite for a collapsed segment (no NaN poisoning the whole gradient). ε tiny ⇒ negligible.
+  if (reading === 'magnitude') return Math.sqrt(v.x * v.x + v.y * v.y + config.eps.length);
   return Math.atan2(projPerp, projPar); // bearing relative to the anchor direction
 }
 
@@ -105,8 +107,12 @@ export function readScalarV(v: Vec2V, reading: Reading, dir: readonly [number, n
   if (reading === 'projPar') return projPar;
   const projPerp = add(mul(v.x, val(-u1)), mul(v.y, val(u0)));
   if (reading === 'projPerp') return projPerp;
-  // magnitude via exp(logLength): equals √(x²+y²) but keeps the sqrt' singularity off the tape.
-  if (reading === 'magnitude') return exp(logLength(v.x, v.y));
+  // magnitude = sqrt(x²+y²+ε.length): the ε floor removes the zero-length singularity, so plain sqrt
+  // is safe here (its derivative 1/(2√·) can never hit √0). Matches the plain path exactly.
+  if (reading === 'magnitude') {
+    const sq = add(add(mul(v.x, v.x), mul(v.y, v.y)), val(config.eps.length));
+    return sqrt(sq);
+  }
   return atan2(projPerp, projPar);
 }
 

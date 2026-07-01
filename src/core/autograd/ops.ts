@@ -89,6 +89,9 @@ export function circularVar(thetas: Value[], eps: number): Value {
   if (n === 0) return val(0);
   const C = sum(thetas.map((t) => cos(t)));
   const S = sum(thetas.map((t) => sin(t)));
-  const R = div(sqrt(add(add(mul(C, C), mul(S, S)), val(eps))), val(n));
+  // Normalize by sqrt(n²+eps), not n: since |(C,S)| ≤ n (triangle inequality), R ≤ 1 ALWAYS, so the
+  // term is exactly ≥ 0 and = 0 at a common orientation (C²+S²=n²). eps inside both radicands keeps
+  // the gradient finite at the antipodal/uniform singularity (C=S=0) without inflating R above 1.
+  const R = div(sqrt(add(add(mul(C, C), mul(S, S)), val(eps))), val(Math.sqrt(n * n + eps)));
   return sub(val(1), R);
 }

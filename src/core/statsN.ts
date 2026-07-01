@@ -19,7 +19,10 @@ export function varianceN(x: ArrayLike<number>): number {
   return x.length ? s / x.length : 0;
 }
 
-/** Circular variance 1 − R, R = √(C²+S²)/n ∈ [0,1]. 0 for a common orientation. */
+/**
+ * Circular variance 1 − R, R = √(C²+S²+eps)/√(n²+eps) ∈ [0,1]. Exactly 0 for a common orientation.
+ * Normalizing by √(n²+eps) (not n) keeps R ≤ 1 so the value is always ≥ 0 — mirrors ops.circularVar.
+ */
 export function circularVarN(thetas: ArrayLike<number>, eps = 0): number {
   const n = thetas.length;
   if (n === 0) return 0;
@@ -29,6 +32,6 @@ export function circularVarN(thetas: ArrayLike<number>, eps = 0): number {
     C += Math.cos(thetas[i]!);
     S += Math.sin(thetas[i]!);
   }
-  const R = Math.sqrt(C * C + S * S + eps) / n;
+  const R = Math.sqrt(C * C + S * S + eps) / Math.sqrt(n * n + eps);
   return 1 - R;
 }

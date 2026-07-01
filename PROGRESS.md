@@ -72,6 +72,17 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
   the through-μ term vanishes because Σ(xᵢ−μ)=0 (μ is the stationary point of the squared-deviation
   sum). We still build reductions from a live `Value` mean for robustness/clarity, but it is not a
   correctness requirement (refines the math-core design note). Verified by a passing gradcheck.
+- **Adversarial review (post-M4, 5 skeptics + verify):** found 4 real defects in the score core, all
+  fixed at the deepest layer before M6 (they would have silently killed the optimizer):
+  1. **Zero-length segment → NaN reward + NaN on ALL 48 grads** (magnitude=0 → fRatio log(0)=−∞ → var NaN,
+     poisoning the shared tape). Fix: `config.eps.length` floor; magnitude = √(dx²+dy²+ε) on both paths.
+  2. **circularVar < 0 at common orientation** (ε inside √ pushed R>1 → negative frozenDof penalty). Fix:
+     normalize by √(n²+ε) so R≤1 exactly; value ∈[0,1], =0 at common orientation. (ops + statsN.)
+  3. **atan2-at-origin NaN grads** (0/0 in backward) — bit frozenDof's tilt path when enabled. Fix:
+     r²=0 ⇒ 0 gradient in `atan2` backward (engine, numerical guard).
+  The scale-nonorthogonality "finding" was correctly REFUTED (expected surrogate behavior, handled in M5).
+  Regression tests in `degeneracy.test.ts` (7). Lesson: the log-repulsion holds for length>0 but NOT at
+  exactly 0 — the ε-floor makes the invariant true AT zero, localizing degeneracy instead of poisoning all 48.
 - **Finding (M5):** the EXACT reward is scale-k invariant, but the differentiable ordinal SURROGATE is
   not (it depends on margins |cᵢ−cⱼ|/T, which scaling inflates). Translation is exactly invariant (it
   preserves differences); scaling is only approximately so, with the residual shrinking as T→0. So the

@@ -37,6 +37,10 @@ export const config = {
     corrVar: 1e-9,
     // Floor inside circularVar's resultant length, avoids sqrt' blow-up at antipodal angles.
     circular: 1e-12,
+    // Floor on squared segment length: magnitude = sqrt(dx²+dy²+length). Turns the zero-length
+    // cusp into a finite value (log stays finite in F_ratio) so a collapsed segment can never make
+    // the reward/gradient NaN and poison the whole optimizer. Tiny ⇒ negligible for real segments.
+    length: 1e-9,
   },
 
   // ── Penalty weights (CONCEPT §8) — FIRST-CLASS, DEFAULT 0 (wired, off) ────
