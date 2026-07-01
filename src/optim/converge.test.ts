@@ -3,7 +3,14 @@
 import { describe, it, expect } from 'vitest';
 import { initConvergence, pushScore } from './converge';
 
-const cfg = { windowSize: 10, plateauEps: 1e-4, minSteps: 5, maxSteps: 1000, qualityThreshold: 0.9 };
+const cfg = {
+  windowSize: 10,
+  plateauEps: 1e-4,
+  plateauRelEps: 3e-4,
+  minSteps: 5,
+  maxSteps: 1000,
+  qualityThreshold: 0.9,
+};
 
 function feed(scores: number[]): { converged: boolean; step: number; byCap: boolean } {
   const st = initConvergence();

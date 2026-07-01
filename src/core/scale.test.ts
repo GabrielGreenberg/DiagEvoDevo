@@ -6,10 +6,11 @@ import { ScaleType, ALL_SCALE_TYPES, scaleLeq, commensurability } from './scale'
 const { Ordinal, Interval, Ratio, Cyclic } = ScaleType;
 
 describe('scale: reads-down partial order (4×4 truth table)', () => {
+  // full chain ordinal ≤ interval ≤ ratio ≤ cyclic (cyclic on top: a bearing carries ratio + wrap)
   const expected: Record<string, Record<string, boolean>> = {
-    ordinal: { ordinal: true, interval: true, ratio: true, cyclic: false },
-    interval: { ordinal: false, interval: true, ratio: true, cyclic: false },
-    ratio: { ordinal: false, interval: false, ratio: true, cyclic: false },
+    ordinal: { ordinal: true, interval: true, ratio: true, cyclic: true },
+    interval: { ordinal: false, interval: true, ratio: true, cyclic: true },
+    ratio: { ordinal: false, interval: false, ratio: true, cyclic: true },
     cyclic: { ordinal: false, interval: false, ratio: false, cyclic: true },
   };
   it('matches the Hasse diagram exactly', () => {
@@ -41,25 +42,25 @@ describe('scale: partial-order axioms', () => {
       }
     }
   });
-  it('cyclic is isolated (incomparable to the linear chain both ways)', () => {
+  it('cyclic is the TOP (a bearing carries ordinal/interval/ratio); nothing linear is ≥ cyclic', () => {
     for (const t of [Ordinal, Interval, Ratio]) {
-      expect(scaleLeq(t, Cyclic)).toBe(false);
-      expect(scaleLeq(Cyclic, t)).toBe(false);
+      expect(scaleLeq(t, Cyclic)).toBe(true); // every linear data type fits inside a bearing
+      expect(scaleLeq(Cyclic, t)).toBe(false); // but a wrap-around can't be carried by a linear read
     }
   });
 });
 
 describe('scale: commensurability (assignment legality dataType ≤ stamp)', () => {
-  it('order (ordinal) is legal on interval and ratio, not cyclic', () => {
+  it('order (ordinal) is legal on interval, ratio, AND cyclic (order readable from angles)', () => {
     expect(commensurability(Ordinal, Interval)).toBe(true); // order → x-position
     expect(commensurability(Ordinal, Ratio)).toBe(true);
-    expect(commensurability(Ordinal, Cyclic)).toBe(false); // rejects month→cyclic
+    expect(commensurability(Ordinal, Cyclic)).toBe(true); // order → an angle's rank
   });
-  it('sales (ratio) is legal only on ratio', () => {
+  it('sales (ratio) is legal on ratio AND cyclic (a bearing carries ratio), not interval/ordinal', () => {
     expect(commensurability(Ratio, Ratio)).toBe(true);
+    expect(commensurability(Ratio, Cyclic)).toBe(true); // sales → an angle-from-reference (dial encoding)
     expect(commensurability(Ratio, Interval)).toBe(false); // truncated-baseline demotion is illegal
     expect(commensurability(Ratio, Ordinal)).toBe(false);
-    expect(commensurability(Ratio, Cyclic)).toBe(false);
   });
   it('cyclic data (none in v1) is legal only on cyclic', () => {
     expect(commensurability(Cyclic, Cyclic)).toBe(true);

@@ -16,7 +16,7 @@ export interface SerializedResult {
   dataSeed: number;
   figure: number[];
   data: { labels: string[]; values: number[]; seed: number };
-  assignment: Record<string, string>;
+  topCarriers: Record<string, string>;
   score: Breakdown;
   converged: boolean;
   convergedByCap: boolean;
@@ -31,7 +31,7 @@ export function serialize(r: SessionResult): SerializedResult {
     dataSeed: r.dataSeed,
     figure: Array.from(r.figure),
     data: { labels: [...r.data.labels], values: Array.from(r.data.values), seed: r.data.seed },
-    assignment: r.assignment,
+    topCarriers: r.topCarriers,
     score: r.score,
     converged: r.converged,
     convergedByCap: r.convergedByCap,
@@ -47,7 +47,7 @@ export function deserialize(s: SerializedResult): SessionResult {
     dataSeed: s.dataSeed,
     figure: Float64Array.from(s.figure),
     data: { labels: s.data.labels, values: Float64Array.from(s.data.values), seed: s.data.seed },
-    assignment: s.assignment,
+    topCarriers: s.topCarriers,
     score: s.score,
     converged: s.converged,
     convergedByCap: s.convergedByCap,

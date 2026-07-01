@@ -48,6 +48,8 @@ const PRIMITIVES: OpSpec[] = [
   { name: 'powNeg1', arity: 1, sample: (r) => vec(r, 1, nonzero), build: (l) => E.pow(l[0]!, -1) },
   { name: 'sqrt', arity: 1, sample: (r) => vec(r, 1, positive), build: (l) => E.sqrt(l[0]!) },
   { name: 'sigmoid', arity: 1, sample: (r) => vec(r, 1, anyReal), build: (l) => E.sigmoid(l[0]!) },
+  // maxConst(a, 0): sample away from the kink at a=0 so the subgradient matches finite differences
+  { name: 'maxConst', arity: 1, sample: (r) => vec(r, 1, nonzero), build: (l) => E.maxConst(l[0]!, 0) },
   { name: 'sin', arity: 1, sample: (r) => vec(r, 1, anyReal), build: (l) => E.sin(l[0]!) },
   { name: 'cos', arity: 1, sample: (r) => vec(r, 1, anyReal), build: (l) => E.cos(l[0]!) },
   // atan2: keep off the origin (both near-zero is the singular point)

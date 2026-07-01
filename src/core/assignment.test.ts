@@ -21,17 +21,19 @@ const golden = goldenBarChart(data);
 
 describe('assignment: legal candidates (commensurability dataType ≤ stamp)', () => {
   const [sales, order] = dataRelations(data);
-  it('sales (ratio) → the 15 ratio measurements only', () => {
+  it('sales (ratio) → the 15 ratio + 5 cyclic = 20 measurements (a bearing carries ratio)', () => {
     const c = legalCandidates(sales!, REGISTRY);
-    expect(c.length).toBe(15);
-    expect(c.every((m) => m.stamp === ScaleType.Ratio)).toBe(true);
+    expect(c.length).toBe(20);
+    expect(c.filter((m) => m.stamp === ScaleType.Ratio).length).toBe(15);
+    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5);
+    expect(c.every((m) => m.stamp === ScaleType.Ratio || m.stamp === ScaleType.Cyclic)).toBe(true);
   });
-  it('order (ordinal) → the 21 interval∪ratio measurements; NO cyclic', () => {
+  it('order (ordinal) → all 26 measurements (interval ∪ ratio ∪ cyclic; order readable from angles)', () => {
     const c = legalCandidates(order!, REGISTRY);
-    expect(c.length).toBe(21);
-    expect(c.some((m) => m.stamp === ScaleType.Cyclic)).toBe(false);
+    expect(c.length).toBe(26);
     expect(c.filter((m) => m.stamp === ScaleType.Interval).length).toBe(6);
     expect(c.filter((m) => m.stamp === ScaleType.Ratio).length).toBe(15);
+    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5); // angles now carry order
   });
 });
 
@@ -60,10 +62,9 @@ describe('assignment: BestAssignment (argmax over legal maps)', () => {
     const bestReward = rewardOf(golden, data, bestMap);
     expect(bestReward).toBeGreaterThanOrEqual(fixedReward - 1e-9);
   });
-  it('never assigns a cyclic-stamped carrier (illegal for ordinal/ratio data)', () => {
+  it('never assigns a cyclic carrier to SALES (ratio ≰ cyclic); the whole map stays legal', () => {
     const bestMap = resolveAssignment(BestAssignment, data, golden);
-    for (const id of bestMap.values()) {
-      expect(REGISTRY.get(id)!.stamp).not.toBe(ScaleType.Cyclic);
-    }
+    expect(REGISTRY.get(bestMap.get('sales')!)!.stamp).not.toBe(ScaleType.Cyclic);
+    expect(() => assertLegal(bestMap, dataRelations(data))).not.toThrow();
   });
 });

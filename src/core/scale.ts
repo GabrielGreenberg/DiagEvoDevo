@@ -3,10 +3,13 @@
 // Scale types and the "reads-down" partial order (CONCEPT.md §§3,5,7). Scale type is the payload:
 // every measurement cell is stamped with the structure it can carry, read off its frame.
 //
-// The partial order (Stevens' admissible-transformation hierarchy):
-//   ordinal ≤ interval ≤ ratio   — a total chain (ratio carries interval carries ordinal)
-//   cyclic                       — ISOLATED: incomparable to all three (a wrap-around bearing has
-//                                  no linear order; linear data can't be faithfully carried by it)
+// The reads-down order (Stevens' hierarchy, with this project's frame-relative reading of angles):
+//   ordinal ≤ interval ≤ ratio ≤ cyclic   — a total chain, CYCLIC ON TOP.
+// A bearing measured from the frame/page direction has a true zero (the reference direction) and its
+// angle-magnitude carries proportion, so an angle can carry RATIO data (a dial/radial encoding of value);
+// its rank carries ORDER; hence a cyclic measurement is the RICHEST carrier — it can carry ordinal,
+// interval, and ratio data (plus its own wrap). Linear data types can't be read AS cyclic, so nothing is
+// ≤ ordinal below and only cyclic ≤ cyclic at the top.
 //
 // Assignment legality (CONCEPT §7): a measurement with `stamp` can carry `dataType` iff
 // dataType ≤ stamp ("read a stamp down, never up").
@@ -31,19 +34,19 @@ const LEQ: Record<ScaleType, Record<ScaleType, boolean>> = {
     [ScaleType.Ordinal]: true,
     [ScaleType.Interval]: true,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: false,
+    [ScaleType.Cyclic]: true, // order can be read from an angle's rank
   },
   [ScaleType.Interval]: {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: true,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: false,
+    [ScaleType.Cyclic]: true, // interval structure fits inside an angle from the reference
   },
   [ScaleType.Ratio]: {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: false,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: false,
+    [ScaleType.Cyclic]: true, // a bearing from the origin direction carries ratio (angle-magnitude)
   },
   [ScaleType.Cyclic]: {
     [ScaleType.Ordinal]: false,

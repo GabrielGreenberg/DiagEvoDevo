@@ -1,11 +1,11 @@
 // src/ui/scorePanel.ts
 //
-// The live score readout (ARCHITECTURE.md GUI spec): total, quality, and the per-assignment rung
-// breakdown (F_ord/F_int/F_ratio for the sales carrier, F_ord for the order carrier) — updating live so
-// the user watches the terms fight and settle. F_ord is shown as the EXACT (Kendall τ) form, labelled;
-// the optimizer sees the smooth surrogate, so this is the one sanctioned display/optimize value fork.
+// The live score readout for the COMPREHENSIVE matrix (ARCHITECTURE.md GUI spec). Each data relation is
+// compared to every commensurable measurement, like-with-like; the panel shows, per relation, the summed
+// reward and the TOP measurements by fidelity — so the user watches which geometric relations come to
+// track the data (the emergent structure). F_ord within a measurement is the exact (Kendall τ) form.
 
-import type { Breakdown } from '../core/score';
+import type { Breakdown, MeasurementScore } from '../core/score';
 
 export interface ScorePanelData {
   breakdown: Breakdown;
@@ -14,50 +14,62 @@ export interface ScorePanelData {
   mode: string;
 }
 
-const FRIENDLY: Record<string, string> = {
-  'page.displacement.magnitude': 'length',
-  'page.start.projPar': 'x-position',
-  'frame.end.projPar': 'height-vs-baseline',
-};
+const TOP_K = 6;
+const MATCH = 0.9; // a measurement "tracks" the data when its normalized fidelity ≥ this
 
-const pct = (f: number): string => `${(100 * f).toFixed(0)}%`;
+/** Compact human label for a measurement id, e.g. 'page.displacement.magnitude' → 'disp mag'. */
+function shortId(id: string): string {
+  return id
+    .replace('page.', '')
+    .replace('frame.', 'f·')
+    .replace('displacement', 'disp')
+    .replace('midpoint', 'mid')
+    .replace('projPar', '∥')
+    .replace('projPerp', '⊥')
+    .replace('magnitude', 'mag')
+    .replace('angle', '∠')
+    .replace(/\./g, ' ');
+}
 
-function rungRow(name: string, f: number): string {
-  const label = name === 'ord' ? 'F_ord (exact)' : name === 'int' ? 'F_int' : 'F_ratio';
-  const cls = `rung-${name}`;
+function measRow(m: MeasurementScore, maxRung: number): string {
+  const frac = maxRung > 0 ? m.reward / maxRung : 0; // normalized fidelity ∈ [0,1]
+  const cls = m.stamp === 'cyclic' ? 'rung-int' : 'rung-ratio';
   return `<div class="rrow">
-    <span class="rname">${label}</span>
-    <span class="rtrack"><span class="rbar ${cls}" style="width:${(100 * f).toFixed(1)}%"></span></span>
-    <span class="rval">${f.toFixed(3)}</span>
+    <span class="rname" title="${m.id}">${shortId(m.id)}</span>
+    <span class="rtrack"><span class="rbar ${cls}" style="width:${(100 * frac).toFixed(1)}%"></span></span>
+    <span class="rval">${frac.toFixed(2)}</span>
   </div>`;
 }
 
 export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
   const b = d.breakdown;
-  const assignments = b.assignments
-    .map((a) => {
-      const carrier = FRIENDLY[a.measurementId] ?? a.measurementId;
-      const maxR = a.key === 'sales' ? 7 : 1;
+  let matching = 0;
+  let totalMeas = 0;
+
+  const sections = b.relations
+    .map((rel) => {
+      const maxRung = rel.measurements.length ? rel.maxReward / rel.measurements.length : 1;
+      totalMeas += rel.measurements.length;
+      matching += rel.measurements.filter((m) => m.reward / maxRung >= MATCH).length;
+      const top = rel.measurements.slice(0, TOP_K).map((m) => measRow(m, maxRung)).join('');
+      const nMatch = rel.measurements.filter((m) => m.reward / maxRung >= MATCH).length;
       return `<div class="assign">
-        <div class="ahead"><b>${a.key}</b> → ${carrier}
-          <span class="muted">${a.measurementId}</span>
-          <span class="areward">${a.reward.toFixed(2)} / ${maxR.toFixed(2)}</span></div>
-        ${a.rungs.map((r) => rungRow(r.name, r.f)).join('')}
+        <div class="ahead"><b>${rel.key}</b> (${rel.dataType})
+          <span class="muted">${rel.measurements.length} commensurable</span>
+          <span class="areward">${rel.reward.toFixed(1)} / ${rel.maxReward.toFixed(0)}</span></div>
+        <div class="matchline muted">${nMatch} tracking (fidelity ≥ ${MATCH})</div>
+        ${top}
       </div>`;
     })
     .join('');
-  const penalties = b.penalties
-    .map((p) => `${p.name}: ${p.value.toFixed(3)}×${p.weight}`)
-    .join(' · ');
 
-  root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩</span></h3>
+  root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩ — full matrix</span></h3>
     <div class="scoretop">
-      <div class="bignum"><span class="biglabel">quality</span><span class="bigval">${pct(b.quality)}</span></div>
-      <div class="bignum"><span class="biglabel">total</span><span class="bigval">${b.total.toFixed(3)} / ${b.maxReward.toFixed(0)}</span></div>
+      <div class="bignum"><span class="biglabel">reward</span><span class="bigval">${b.reward.toFixed(1)}</span></div>
+      <div class="bignum"><span class="biglabel">tracking</span><span class="bigval">${matching}/${totalMeas}</span></div>
     </div>
     <div class="qualtrack"><span class="qualbar" style="width:${(100 * b.quality).toFixed(1)}%"></span></div>
-    <div class="comphdr muted">both data relations compared, like-with-like (Σ over the product structure):</div>
-    ${assignments}
-    <div class="penrow muted">penalties (off): ${penalties}</div>
+    <div class="comphdr muted">each data relation vs ALL commensurable measurements, summed (top ${TOP_K} shown):</div>
+    ${sections}
     <div class="statusrow muted">step ${d.steps} · T ${d.temperature.toFixed(2)} · ${d.mode}</div>`;
 }

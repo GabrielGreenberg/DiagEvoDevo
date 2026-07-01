@@ -9,7 +9,7 @@
 // optimizer uses the logistic surrogate; they agree only as T→0. Everywhere else the two forms are
 // the same formula (Value vs number), and a test pins fXExact ≈ fX(...).data.
 
-import { Value, val, add, sub, mul, div, neg, exp, log, sigmoid, sqrt } from '../autograd/engine';
+import { Value, val, add, sub, mul, div, neg, exp, log, sigmoid, sqrt, maxConst } from '../autograd/engine';
 import { mean, variance, r2 } from '../autograd/ops';
 import { meanN, varianceN } from '../statsN';
 
@@ -46,12 +46,14 @@ export function fInt(c: Value[], v: Value[], eps: number): Value {
 }
 
 /**
- * Ratio rung (requires c, v > 0): F_ratio = exp( −Var(log c − log v) / σ₀² ).
+ * Ratio rung: F_ratio = exp( −Var(log max(c,posEps) − log v) / σ₀² ), with v > 0.
  * = 1 iff c = k·v (k>0); invariant to the figure's overall scale k (the constant log k drops out of
- * the variance). log repels degenerate zero-length segments.
+ * the variance). The posEps floor lets SIGNED ratio-comparable carriers (run, rise, projections,
+ * bearings) be scored without NaN: a non-positive entry floors to posEps → large defect → low fidelity
+ * (it cannot be a positive multiple of positive data). For strictly-positive carriers it is unchanged.
  */
-export function fRatio(c: Value[], v: Value[], sigma0Sq: number): Value {
-  const d = c.map((ci, i) => sub(log(ci), log(v[i]!)));
+export function fRatio(c: Value[], v: Value[], sigma0Sq: number, posEps = 0): Value {
+  const d = c.map((ci, i) => sub(log(maxConst(ci, posEps)), log(v[i]!)));
   return exp(neg(div(variance(d), val(sigma0Sq))));
 }
 
@@ -95,9 +97,14 @@ export function fIntExact(c: ArrayLike<number>, v: ArrayLike<number>): number {
   return r * r;
 }
 
-/** Exact ratio fidelity (requires c, v > 0). */
-export function fRatioExact(c: ArrayLike<number>, v: ArrayLike<number>, sigma0Sq: number): number {
+/** Exact ratio fidelity (v > 0; c floored at posEps to handle signed carriers). */
+export function fRatioExact(
+  c: ArrayLike<number>,
+  v: ArrayLike<number>,
+  sigma0Sq: number,
+  posEps = 0,
+): number {
   const d = new Array<number>(c.length);
-  for (let i = 0; i < c.length; i++) d[i] = Math.log(c[i]!) - Math.log(v[i]!);
+  for (let i = 0; i < c.length; i++) d[i] = Math.log(Math.max(c[i]!, posEps)) - Math.log(v[i]!);
   return Math.exp(-varianceN(d) / sigma0Sq);
 }

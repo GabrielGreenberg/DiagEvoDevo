@@ -43,8 +43,8 @@ export const RATIO_RUNG: Rung = {
   name: 'ratio',
   scaleType: ScaleType.Ratio,
   weight: (cfg) => cfg.weights.w_ratio,
-  fDiff: (c, v, cfg) => fRatio(c, v, cfg.sigma0Sq),
-  fExact: (c, v, cfg) => fRatioExact(c, v, cfg.sigma0Sq),
+  fDiff: (c, v, cfg) => fRatio(c, v, cfg.sigma0Sq, cfg.eps.ratioPos),
+  fExact: (c, v, cfg) => fRatioExact(c, v, cfg.sigma0Sq, cfg.eps.ratioPos),
 };
 
 /** The registry, in ascending strictness. */

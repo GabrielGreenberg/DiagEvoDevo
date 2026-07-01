@@ -15,12 +15,9 @@ import { circularVarN } from './statsN';
 import { config, type Config, N_PARAMS } from '../config';
 import { seedToFigure, segBase } from './figure';
 import { seedToDataSet } from './data';
-import { FixedAssignment } from './assignment';
-import { resolveAssignment } from './score';
 import { gradScore } from './gradient';
 
 const data = seedToDataSet(1);
-const map = resolveAssignment(FixedAssignment, data, seedToFigure(1));
 const allFinite = (a: Float64Array): boolean => a.every((x) => Number.isFinite(x));
 
 describe('degeneracy #1: zero-length segments never NaN the reward or gradient (default config)', () => {
@@ -29,7 +26,7 @@ describe('degeneracy #1: zero-length segments never NaN the reward or gradient (
     const b = segBase(3);
     f[b + 2] = f[b + 0]!; // end.x = start.x
     f[b + 3] = f[b + 1]!; // end.y = start.y  → length 0
-    const { score, grad } = gradScore(f, data, map);
+    const { score, grad } = gradScore(f, data);
     expect(Number.isFinite(score)).toBe(true);
     expect(allFinite(grad)).toBe(true);
   });
@@ -40,7 +37,7 @@ describe('degeneracy #1: zero-length segments never NaN the reward or gradient (
       f[b + 2] = f[b + 0]!;
       f[b + 3] = f[b + 1]!;
     }
-    const { score, grad } = gradScore(f, data, map);
+    const { score, grad } = gradScore(f, data);
     expect(Number.isFinite(score)).toBe(true);
     expect(allFinite(grad)).toBe(true);
   });
@@ -49,7 +46,7 @@ describe('degeneracy #1: zero-length segments never NaN the reward or gradient (
     const b = segBase(0);
     f[b + 2] = f[b + 0]! + 1e-9;
     f[b + 3] = f[b + 1]! + 1e-9;
-    const { score, grad } = gradScore(f, data, map);
+    const { score, grad } = gradScore(f, data);
     expect(Number.isFinite(score)).toBe(true);
     expect(allFinite(grad)).toBe(true);
   });
@@ -102,7 +99,7 @@ describe('degeneracy #4: frozenDof with weight on stays finite for collapsed seg
     const b = segBase(5);
     f[b + 2] = f[b + 0]!;
     f[b + 3] = f[b + 1]!;
-    const { score, grad } = gradScore(f, data, map, cfg2);
+    const { score, grad } = gradScore(f, data, cfg2);
     expect(Number.isFinite(score)).toBe(true);
     for (let i = 0; i < N_PARAMS; i++) expect(Number.isFinite(grad[i]!), `leaf ${i}`).toBe(true);
   });

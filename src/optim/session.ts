@@ -11,9 +11,7 @@ import { seedToDataSet } from '../core/data';
 import type { Figure } from '../core/figure';
 import { cloneFigure } from '../core/figure';
 import { pageFromConfig, frameFromConfig } from '../core/frame';
-import type { AssignmentMap, AssignmentPolicy } from '../core/assignment';
-import { policyFromConfig } from '../core/assignment';
-import { resolveAssignment, scoreExact, type Breakdown } from '../core/score';
+import { scoreExact, type Breakdown } from '../core/score';
 import { gradScore, scoreOnly } from '../core/gradient';
 import { adamStep, initAdam } from './gd';
 import {
@@ -33,7 +31,7 @@ export interface SessionResult {
   dataSeed: number;
   figure: Figure; // best member's final figure
   data: DataSet;
-  assignment: Record<string, string>; // resolved measurement ids
+  topCarriers: Record<string, string>; // best-matching measurement per data relation (informational)
   score: Breakdown; // exact breakdown of the final figure
   converged: boolean;
   convergedByCap: boolean; // hit maxSteps rather than a genuine plateau
@@ -46,7 +44,6 @@ export class Session {
   readonly dataSeed: number;
   readonly data: DataSet;
   readonly cfg: Config;
-  readonly policy: AssignmentPolicy;
 
   status: SessionStatus = 'idle';
   steps = 0;
@@ -63,7 +60,6 @@ export class Session {
     this.dataSeed = dataSeed;
     this.cfg = cfg;
     this.data = seedToDataSet(dataSeed, cfg);
-    this.policy = policyFromConfig(cfg);
     this.frame = frameFromConfig(cfg);
     this.page = pageFromConfig(cfg);
     const init = initPopulation(figureSeed, cfg.evolve.populationSize, cfg);
@@ -83,14 +79,9 @@ export class Session {
     return this.best.score;
   }
 
-  /** The resolved assignment map for the best figure. */
-  assignment(): AssignmentMap {
-    return resolveAssignment(this.policy, this.data, this.best.figure, this.cfg, this.frame, this.page);
-  }
-
   /** Exact score breakdown of the best figure (for the score panel). Computed on demand. */
   breakdown(): Breakdown {
-    return scoreExact(this.best.figure, this.data, this.assignment(), this.cfg, this.frame, this.page);
+    return scoreExact(this.best.figure, this.data, this.cfg, this.frame, this.page);
   }
 
   /** The current annealed temperature (large early → config.T late), for global ordinal sorting. */
@@ -113,8 +104,7 @@ export class Session {
     this.status = 'running';
     const stepCfg = this.stepConfig();
     for (const m of this.pop.members) {
-      const map = resolveAssignment(this.policy, this.data, m.figure, stepCfg, this.frame, this.page);
-      const gs = gradScore(m.figure, this.data, map, stepCfg, this.frame, this.page);
+      const gs = gradScore(m.figure, this.data, stepCfg, this.frame, this.page);
       m.figure = adamStep(m.figure, gs.grad, m.adam, stepCfg.adam);
       m.score = gs.score;
     }
@@ -123,15 +113,7 @@ export class Session {
       const ecfg = this.stepConfig();
       evolveStep(
         this.pop,
-        (f) =>
-          scoreOnly(
-            f,
-            this.data,
-            resolveAssignment(this.policy, this.data, f, ecfg, this.frame, this.page),
-            ecfg,
-            this.frame,
-            this.page,
-          ),
+        (f) => scoreOnly(f, this.data, ecfg, this.frame, this.page),
         this.rng,
         this.cfg,
       );
@@ -178,15 +160,16 @@ export class Session {
   }
 
   result(): SessionResult {
-    const assignment: Record<string, string> = {};
-    for (const [k, v] of this.assignment()) assignment[k] = v;
+    const b = this.breakdown();
+    const topCarriers: Record<string, string> = {};
+    for (const rel of b.relations) topCarriers[rel.key] = rel.measurements[0]?.id ?? '';
     return {
       figureSeed: this.figureSeed,
       dataSeed: this.dataSeed,
       figure: cloneFigure(this.best.figure),
       data: this.data,
-      assignment,
-      score: this.breakdown(),
+      topCarriers,
+      score: b,
       converged: this.conv.converged,
       convergedByCap: this.conv.byCap,
       steps: this.steps,

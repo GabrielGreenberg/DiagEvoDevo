@@ -196,6 +196,16 @@ export function sqrt(a: Value): Value {
   return out;
 }
 
+export function maxConst(a: Value, k: number): Value {
+  // max(a, k) with a constant k. Subgradient: passes gradient through where a>k, 0 where a<k (the
+  // floored region contributes no pull via this op — other terms supply gradient there).
+  const out = new Value(Math.max(a.data, k), [a], `max(${k})`);
+  out._backward = () => {
+    if (a.data > k) a.grad += out.grad;
+  };
+  return out;
+}
+
 export function sin(a: Value): Value {
   const out = new Value(Math.sin(a.data), [a], 'sin');
   out._backward = () => {

@@ -13,7 +13,6 @@ import type { DataSet } from './data';
 import type { Figure } from './figure';
 import type { Page, PositedFrame } from './frame';
 import { pageFromConfig, frameFromConfig } from './frame';
-import type { AssignmentMap } from './assignment';
 import { scoreValue } from './score';
 
 /** Plant the 48 figure coordinates as Value leaves, in the canonical flat index order. */
@@ -37,13 +36,12 @@ export interface ScoreGrad {
 export function gradScore(
   figure: Figure,
   data: DataSet,
-  map: AssignmentMap,
   cfg: Config = config,
   frame: PositedFrame = frameFromConfig(cfg),
   page: Page = pageFromConfig(cfg),
 ): ScoreGrad {
   const leaves = buildLeaves(figure);
-  const sv = scoreValue(leaves, data, map, cfg, frame, page);
+  const sv = scoreValue(leaves, data, cfg, frame, page);
   backward(sv.total);
   const grad = new Float64Array(N_PARAMS);
   for (let i = 0; i < N_PARAMS; i++) grad[i] = leaves[i]!.grad;
@@ -54,10 +52,9 @@ export function gradScore(
 export function scoreOnly(
   figure: Figure,
   data: DataSet,
-  map: AssignmentMap,
   cfg: Config = config,
   frame: PositedFrame = frameFromConfig(cfg),
   page: Page = pageFromConfig(cfg),
 ): number {
-  return scoreValue(buildLeaves(figure), data, map, cfg, frame, page).total.data;
+  return scoreValue(buildLeaves(figure), data, cfg, frame, page).total.data;
 }

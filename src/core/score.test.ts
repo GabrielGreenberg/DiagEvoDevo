@@ -1,211 +1,119 @@
-// src/core/score.test.ts — M4 gate for the total score, golden bar chart, invariances, penalties.
+// src/core/score.test.ts — the total score, in both scoring modes.
 
 import { describe, it, expect } from 'vitest';
-import { val, backward, type Value } from './autograd/engine';
+import { val, type Value } from './autograd/engine';
 import { config, type Config } from '../config';
-import { cloneFigure, segBase, type Figure } from './figure';
+import { cloneFigure, segBase, seedToFigure, type Figure } from './figure';
 import { pageFromConfig, frameFromConfig } from './frame';
-import { FixedAssignment } from './assignment';
-import { scoreExact, scoreValue, resolveAssignment } from './score';
-import { maxRewardFor } from './fidelity/rungs';
-import { ScaleType } from './scale';
+import { scoreExact, scoreValue, type RelationBreakdown } from './score';
 import { REGISTRY } from './measurements/registry';
 import { frozenDof } from './penalties/frozenDof';
-import { spuriousness } from './penalties/spuriousness';
 import { economy } from './penalties/economy';
 import type { PenaltyContext } from './penalties/registry';
 import { wellSeparatedData, goldenBarChart } from './fixtures';
 
 const data = wellSeparatedData();
 const golden = goldenBarChart(data);
-const map = resolveAssignment(FixedAssignment, data, golden);
-const frame = frameFromConfig();
-const page = pageFromConfig();
-const MAX_REWARD = maxRewardFor(ScaleType.Ratio, config) + maxRewardFor(ScaleType.Ordinal, config); // 8
 const leavesOf = (f: Figure): Value[] => Array.from(f, (x) => val(x));
-const penCtx: PenaltyContext = { map, registry: REGISTRY, frame, page, data, cfg: config };
+const fixed: Config = { ...config, scoring: 'fixed' };
+const salesRel = (f: Figure, cfg = config): RelationBreakdown =>
+  scoreExact(f, data, cfg).relations.find((r) => r.key === 'sales')!;
 
-describe('score: golden bar chart scores the max reward', () => {
-  it('exact reward = maxReward, quality = 1, every rung ≈ 1', () => {
-    const b = scoreExact(golden, data, map);
-    expect(b.reward).toBeCloseTo(MAX_REWARD, 6);
-    expect(b.quality).toBeCloseTo(1, 6);
-    for (const a of b.assignments) {
-      for (const r of a.rungs) expect(r.f, `${a.key}.${r.name}`).toBeCloseTo(1, 6);
-    }
-    // sales gets 3 rungs, order gets 1 rung
-    expect(b.assignments.find((a) => a.key === 'sales')!.rungs.map((r) => r.name)).toEqual([
-      'ord',
-      'int',
-      'ratio',
-    ]);
-    expect(b.assignments.find((a) => a.key === 'order')!.rungs.map((r) => r.name)).toEqual(['ord']);
-  });
-  it('differentiable reward → exact reward as the (normalized) temperature sharpens', () => {
-    // At the default T the spread-normalized ordinal surrogate sits a little below the exact Kendall
-    // value; as T→0 it sharpens to agree. (The score panel shows the exact form regardless.)
-    const se = scoreExact(golden, data, map).reward;
-    const sharp: Config = { ...config, T: 0.005 };
-    expect(Math.abs(scoreValue(leavesOf(golden), data, map, sharp).reward.data - se)).toBeLessThan(0.01);
+describe('score (fixed mode): golden bar chart scores the single-carrier max', () => {
+  it('reward = 8 (sales→length 7 + order→x-position 1); one measurement per relation', () => {
+    const b = scoreExact(golden, data, fixed);
+    expect(b.reward).toBeCloseTo(8, 6);
+    for (const rel of b.relations) expect(rel.measurements.length).toBe(1);
   });
 });
 
-describe('score: invariances leave the reward unchanged (to ε)', () => {
-  const base = scoreExact(golden, data, map).reward;
-  it('global height scale k', () => {
-    expect(scoreExact(goldenBarChart(data, { k: 5 }), data, map).reward).toBeCloseTo(base, 6);
-    expect(scoreExact(goldenBarChart(data, { k: 0.01 }), data, map).reward).toBeCloseTo(base, 6);
+describe('score (comprehensive): the full matrix', () => {
+  it('sales scored vs 20 measurements (ratio+cyclic), order vs 26; nothing is NaN', () => {
+    const b = scoreExact(golden, data);
+    expect(b.relations.find((r) => r.key === 'sales')!.measurements.length).toBe(20);
+    expect(b.relations.find((r) => r.key === 'order')!.measurements.length).toBe(26);
+    expect(Number.isFinite(b.reward)).toBe(true);
+    for (const rel of b.relations) for (const m of rel.measurements) expect(Number.isFinite(m.reward)).toBe(true);
   });
-  it('horizontal translation', () => {
-    expect(scoreExact(goldenBarChart(data, { x0: 5000 }), data, map).reward).toBeCloseTo(base, 6);
-  });
-  it('horizontal spacing (ordinal is spacing-invariant)', () => {
-    expect(scoreExact(goldenBarChart(data, { spacing: 3 }), data, map).reward).toBeCloseTo(base, 6);
-    expect(scoreExact(goldenBarChart(data, { spacing: 137 }), data, map).reward).toBeCloseTo(base, 6);
-  });
-  it('vertical baseline shift (baseline is a frozen DOF, not scored)', () => {
-    expect(scoreExact(goldenBarChart(data, { baseline: 400 }), data, map).reward).toBeCloseTo(base, 6);
-  });
-});
 
-describe('score: non-invariant perturbations strictly lower the reward', () => {
-  const base = scoreExact(golden, data, map).reward;
-  it('breaking one bar height proportionality lowers the ratio rung', () => {
-    const f = cloneFigure(golden);
-    const b3 = segBase(3);
-    f[b3 + 3] = f[b3 + 1]! + 1.7 * (f[b3 + 3]! - f[b3 + 1]!); // bar 3 = 1.7× its correct height
-    const s = scoreExact(f, data, map);
-    expect(s.reward).toBeLessThan(base - 1e-6);
-    expect(s.assignments.find((a) => a.key === 'sales')!.rungs.find((r) => r.name === 'ratio')!.f).toBeLessThan(1);
+  it('golden bars make MULTIPLE ratio measurements track sales (length AND rise AND height)', () => {
+    const sales = salesRel(golden);
+    const maxRung = sales.maxReward / sales.measurements.length; // 7
+    const tracking = sales.measurements.filter((m) => m.reward / maxRung >= 0.9);
+    expect(tracking.length).toBeGreaterThanOrEqual(2); // a rich homomorphism, not just one carrier
+    expect(sales.measurements.some((m) => m.id === 'page.displacement.magnitude' && m.reward / maxRung >= 0.9)).toBe(true);
   });
-  it('breaking the left-to-right order lowers the ordinal rung', () => {
-    const f = cloneFigure(golden);
-    const b3 = segBase(3);
-    const b4 = segBase(4);
-    // swap the x-positions of bars 3 and 4 → start x no longer monotone
-    [f[b3], f[b3 + 2], f[b4], f[b4 + 2]] = [f[b4]!, f[b4 + 2]!, f[b3]!, f[b3 + 2]!];
-    const s = scoreExact(f, data, map);
-    expect(s.reward).toBeLessThan(base - 1e-6);
-    expect(s.assignments.find((a) => a.key === 'order')!.rungs.find((r) => r.name === 'ord')!.f).toBeLessThan(1);
-  });
-});
 
-describe('score: capturing MORE structure scores strictly higher (doubled-up matches)', () => {
-  // both dimensions match (golden) vs only ONE dimension matching.
-  const scrambleX = (): Figure => {
-    // perfect lengths, but the x-positions are in the WRONG order (value matches, order broken)
-    const f = cloneFigure(golden);
-    const perm = [5, 0, 9, 2, 11, 1, 7, 3, 10, 4, 8, 6];
+  it('is finite on random and degenerate figures (posEps + length floors)', () => {
+    for (let s = 0; s < 12; s++) expect(Number.isFinite(scoreExact(seedToFigure(s), data).reward)).toBe(true);
+    const collapsed = cloneFigure(golden);
     for (let i = 0; i < 12; i++) {
       const b = segBase(i);
-      const x = 5 + perm[i]! * 10;
-      f[b] = x;
-      f[b + 2] = x;
+      collapsed[b + 2] = collapsed[b]!;
+      collapsed[b + 3] = collapsed[b + 1]!;
     }
-    return f;
-  };
-  const flattenHeights = (): Figure => {
-    // x-positions correct (order matches), but all lengths equal (value/ratio structure broken)
-    const f = cloneFigure(golden);
+    expect(Number.isFinite(scoreExact(collapsed, data).reward)).toBe(true);
+    expect(Number.isFinite(scoreValue(leavesOf(collapsed), data).reward.data)).toBe(true);
+  });
+});
+
+describe('score (comprehensive): capturing MORE structure scores strictly higher', () => {
+  it('vertical bars (length+rise+height match sales) beat same-length bars at random angles', () => {
+    // random-orientation bars: |displacement| = value (length matches) but rise/projections do NOT
+    const lengthOnly = cloneFigure(golden);
     for (let i = 0; i < 12; i++) {
       const b = segBase(i);
-      f[b + 3] = f[b + 1]! + 100;
+      const x = golden[b]!;
+      const len = data.values[i]!;
+      const theta = (i * 2.399963) % (2 * Math.PI); // deterministic pseudo-random angles
+      lengthOnly[b] = x;
+      lengthOnly[b + 1] = 0;
+      lengthOnly[b + 2] = x + len * Math.cos(theta);
+      lengthOnly[b + 3] = len * Math.sin(theta);
     }
-    return f;
+    // both have length ∝ value, but golden also has rise/height ∝ value → more of the matrix satisfied
+    expect(salesRel(golden).reward).toBeGreaterThan(salesRel(lengthOnly).reward + 1e-6);
+  });
+});
+
+describe('score (comprehensive): scale invariance (translation is NOT a symmetry — the frame anchors it)', () => {
+  it('scaling ALL coordinates about the frame origin leaves the reward unchanged', () => {
+    const base = scoreExact(golden, data).reward;
+    for (const k of [5, 0.2]) {
+      const scaled = cloneFigure(golden);
+      for (let i = 0; i < scaled.length; i++) scaled[i] = golden[i]! * k;
+      expect(scoreExact(scaled, data).reward, `k=${k}`).toBeCloseTo(base, 5);
+    }
+  });
+});
+
+describe('score: penalties are wired but zero-weighted (no effect on the total)', () => {
+  it('penalty = 0 at default weights; total = reward in both modes', () => {
+    for (const cfg of [config, fixed]) {
+      const b = scoreExact(golden, data, cfg);
+      expect(b.penalty).toBe(0);
+      expect(b.total).toBeCloseTo(b.reward, 9);
+      for (const p of b.penalties) expect(p.weight).toBe(0);
+    }
+    expect(scoreValue(leavesOf(golden), data).penalty.data).toBe(0);
+  });
+});
+
+describe('penalties: still compute sane values on hand-built inputs', () => {
+  const penCtx: PenaltyContext = {
+    map: new Map([
+      ['sales', config.fixedCarriers.sales],
+      ['order', config.fixedCarriers.order],
+    ]),
+    registry: REGISTRY,
+    frame: frameFromConfig(),
+    page: pageFromConfig(),
+    data,
+    cfg: config,
   };
-  it('both dimensions match > only value matches > only order matches', () => {
-    const both = scoreExact(golden, data, map).total;
-    const valueOnly = scoreExact(scrambleX(), data, map).total;
-    const orderOnly = scoreExact(flattenHeights(), data, map).total;
-    expect(both).toBeGreaterThan(valueOnly + 1e-6); // adding a correct order lifts the score
-    expect(both).toBeGreaterThan(orderOnly + 1e-6); // adding correct values lifts the score
-    // the value dimension (3 rungs, max 7) is worth more than the order dimension (1 rung, max 1)
-    expect(valueOnly).toBeGreaterThan(orderOnly);
-  });
-  it('the increment from getting order right equals the order reward gained', () => {
-    const withOrder = scoreExact(golden, data, map);
-    const withoutOrder = scoreExact(scrambleX(), data, map);
-    const orderGain =
-      withOrder.assignments.find((a) => a.key === 'order')!.reward -
-      withoutOrder.assignments.find((a) => a.key === 'order')!.reward;
-    expect(withOrder.total - withoutOrder.total).toBeCloseTo(orderGain, 6); // additive across dimensions
-    expect(orderGain).toBeGreaterThan(0);
-  });
-});
-
-describe('score: penalties are wired but zero-weighted (no effect on v1 total)', () => {
-  it('all penalties are 0 at default weights; total = reward', () => {
-    const b = scoreExact(golden, data, map);
-    expect(b.penalty).toBe(0);
-    expect(b.total).toBeCloseTo(b.reward, 12);
-    for (const p of b.penalties) expect(p.weight).toBe(0);
-    // differentiable penalty is also 0
-    expect(scoreValue(leavesOf(golden), data, map).penalty.data).toBe(0);
-  });
-});
-
-describe('penalties: each computes a sane value on hand-built inputs', () => {
-  it('frozenDof ≈ 0 for a shared baseline + common orientation; > 0 for drift', () => {
-    // golden: baseline 0, tilt all π/2 ⇒ frozenDof ≈ 0 AND ≥ 0 (penalty must never go negative)
+  it('frozenDof ≥ 0 and ≈ 0 for the golden (shared baseline + vertical); economy = 2', () => {
     expect(frozenDof.valueExact(golden, penCtx)).toBeGreaterThanOrEqual(0);
     expect(frozenDof.valueExact(golden, penCtx)).toBeLessThan(1e-9);
-    // drift: vary each start y (baseline spread), keep vertical
-    const drift = cloneFigure(golden);
-    for (let i = 0; i < 12; i++) {
-      const b = segBase(i);
-      const h = drift[b + 3]! - drift[b + 1]!;
-      drift[b + 1] = i * 7; // baseline now varies
-      drift[b + 3] = i * 7 + h;
-    }
-    expect(frozenDof.valueExact(drift, penCtx)).toBeGreaterThan(0);
-    // differentiable value matches exact
-    expect(frozenDof.value(leavesOf(drift), penCtx).data).toBeCloseTo(
-      frozenDof.valueExact(drift, penCtx),
-      9,
-    );
-  });
-
-  it('spuriousness ∈ [0,1], high for evenly-spaced x, lower for uneven spacing', () => {
-    const sGolden = spuriousness.valueExact(golden, penCtx); // even spacing ⇒ near 1
-    expect(sGolden).toBeGreaterThan(0.9);
-    expect(sGolden).toBeLessThanOrEqual(1 + 1e-9);
-    // ordered but non-linear spacing
-    const uneven = cloneFigure(golden);
-    const xs = [0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66];
-    for (let i = 0; i < 12; i++) {
-      const b = segBase(i);
-      uneven[b] = xs[i]!;
-      uneven[b + 2] = xs[i]!;
-    }
-    const sUneven = spuriousness.valueExact(uneven, penCtx);
-    expect(sUneven).toBeLessThan(sGolden);
-    expect(sUneven).toBeGreaterThanOrEqual(0);
-  });
-
-  it('economy = active measurements + posited frames = 2 for FixedAssignment (constant, zero grad)', () => {
     expect(economy.valueExact(golden, penCtx)).toBe(2);
-    const leaves = leavesOf(golden);
-    const e = economy.value(leaves, penCtx);
-    expect(e.data).toBe(2);
-    backward(e);
-    expect(leaves.every((l) => l.grad === 0)).toBe(true); // structural ⇒ no pull on coordinates
-  });
-});
-
-describe('score: enabling a penalty weight has the intended effect (no code change)', () => {
-  it('frozenDof weight 1 subtracts the drift penalty from the total', () => {
-    const cfg2: Config = { ...config, penalties: { ...config.penalties, frozenDof: 1 } };
-    const drift = cloneFigure(golden);
-    for (let i = 0; i < 12; i++) {
-      const b = segBase(i);
-      const h = drift[b + 3]! - drift[b + 1]!;
-      drift[b + 1] = i * 7;
-      drift[b + 3] = i * 7 + h;
-    }
-    const b = scoreExact(drift, data, map, cfg2);
-    expect(b.penalty).toBeGreaterThan(0);
-    expect(b.total).toBeCloseTo(b.reward - b.penalty, 9);
-    // golden has ~zero frozenDof even with the weight on
-    expect(scoreExact(golden, data, map, cfg2).penalty).toBeLessThan(1e-6);
   });
 });

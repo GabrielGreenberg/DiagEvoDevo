@@ -53,6 +53,10 @@ export const config = {
     // cusp into a finite value (log stays finite in F_ratio) so a collapsed segment can never make
     // the reward/gradient NaN and poison the whole optimizer. Tiny ⇒ negligible for real segments.
     length: 1e-9,
+    // Positivity floor for the ratio rung: F_ratio uses log(max(c, ratioPos)). Ratio-comparable SIGNED
+    // measurements (run, rise, projections, and bearings) can be ≤0; flooring keeps log finite so a
+    // non-positive carrier scores LOW fidelity (can't be a positive multiple of positive data), not NaN.
+    ratioPos: 1e-6,
   },
 
   // ── Penalty weights (CONCEPT §8) — FIRST-CLASS, DEFAULT 0 (wired, off) ────
@@ -73,7 +77,7 @@ export const config = {
 
   // ── Evolution / random-restart outer layer (CONCEPT §9) ──────────────────
   evolve: {
-    populationSize: 8, // 1 displayed champion + (N−1) exploring members (parallel restarts)
+    populationSize: 4, // 1 displayed champion + (N−1) exploring members (comprehensive score is heavy)
     mutationSigma: 0.2, // gaussian perturbation scale for restart/mutation
     restartOnStall: true,
     maxRestarts: 20,
@@ -90,10 +94,11 @@ export const config = {
   // we watch the score window's spread instead.
   converge: {
     windowSize: 50,
-    plateauEps: 1e-4, // max(window) − min(window) below this ⇒ plateau
+    plateauEps: 1e-4, // absolute: max(window) − min(window) below this ⇒ plateau (near-zero scores)
+    plateauRelEps: 3e-4, // relative: spread / |mean| below this ⇒ plateau (adapts to the score scale)
     minSteps: 100, // never declare convergence before this
     maxSteps: 5000, // hard cap per run
-    qualityThreshold: 0.9, // normalized score to count a converged run as "success" (bench/M6)
+    qualityThreshold: 0.9, // normalized score to count a converged run as "success" (bench)
   },
 
   // ── Figure init (CONCEPT §2: random 48-vector from a seed) ───────────────
@@ -121,7 +126,13 @@ export const config = {
     tol: 1e-5, // relative-L2 tolerance
   },
 
-  // ── Assignment policy default (CONCEPT §7: start Fixed, graduate to Best) ─
+  // ── Scoring mode ──────────────────────────────────────────────────────────
+  // 'comprehensive' (default): each data relation is scored against ALL commensurable measurements,
+  //   summed — the full-matrix homomorphism (sales → 20 ratio-comparable, order → all 26).
+  // 'fixed': collapse each relation to a single configured carrier (the earlier bar-chart-only model).
+  scoring: 'comprehensive' as 'comprehensive' | 'fixed',
+
+  // ── Assignment policy default (CONCEPT §7: only used in 'fixed'/invention modes) ─
   assignmentPolicy: 'fixed' as 'fixed' | 'best',
 
   // ── Fixed assignment carriers (CONCEPT §7). Defaults need no posited frame. ──
@@ -142,7 +153,7 @@ export const config = {
   },
 
   // ── GUI / render loop ─────────────────────────────────────────────────────
-  stepsPerFrame: 20, // inner optimizer steps per animation frame (decouples fps from step size)
+  stepsPerFrame: 4, // inner optimizer steps per animation frame (comprehensive score is ~10× heavier)
 };
 // NOTE: no `as const` — fields keep plain number/string types so the user (and tests / the optimizer)
 // can override weights, penalty weights, and hyperparameters by spreading a modified copy.

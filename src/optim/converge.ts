@@ -44,11 +44,18 @@ export function pushScore(
 
   let mn = Infinity;
   let mx = -Infinity;
+  let sum = 0;
   for (const s of state.window) {
     if (s < mn) mn = s;
     if (s > mx) mx = s;
+    sum += s;
   }
-  if (mx - mn <= cfg.plateauEps) {
+  // RELATIVE plateau: the window's spread as a fraction of its mean magnitude. Relative (not absolute)
+  // so it adapts to the score scale — comprehensive scoring runs at ~10²·(fixed-mode scale). Also accept
+  // an absolute floor for scores near zero.
+  const mean = Math.abs(sum / state.window.length);
+  const spread = mx - mn;
+  if (spread <= cfg.plateauEps || spread / (mean + 1e-9) <= cfg.plateauRelEps) {
     state.converged = true;
     return true;
   }

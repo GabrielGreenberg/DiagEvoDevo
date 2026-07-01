@@ -46,6 +46,22 @@ describe('ladder: ratio rung', () => {
   });
 });
 
+describe('ladder: F_ratio handles signed / zero carriers without NaN (posEps floor)', () => {
+  const v = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const posEps = config.eps.ratioPos;
+  it('is finite for negative/zero carriers; low for non-positive, ≈1 for positive-proportional', () => {
+    const signed = [-3, 2, -1, 4, 5, -6, 7, 8, 9, 10, 11, 12];
+    const fSigned = fRatio(V(signed), V(v), S0, posEps).data;
+    expect(Number.isFinite(fSigned)).toBe(true);
+    expect(fSigned).toBeLessThan(0.5); // sign-mixed carrier can't proportionally match positive data
+    expect(fRatioExact(arr(signed), arr(v), S0, posEps)).toBeCloseTo(fSigned, 6); // paths agree
+    const prop = v.map((x) => 3 * x);
+    expect(fRatio(V(prop), V(v), S0, posEps).data).toBeCloseTo(1, 6); // positive-proportional
+    const zeros = new Array(12).fill(0);
+    expect(Number.isFinite(fRatio(V(zeros), V(v), S0, posEps).data)).toBe(true); // no NaN at all-zero
+  });
+});
+
 describe('ladder: interval rung', () => {
   it('F_int(a·v + b, v) = 1 for a>0, b (exact and differentiable)', () => {
     const rng = mulberry32(4);
