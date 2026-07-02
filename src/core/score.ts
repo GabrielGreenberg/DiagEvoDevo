@@ -56,10 +56,13 @@ import {
   type AssignmentPolicy,
 } from './assignment';
 
-/** The distinct carriers a relation is scored against, per the scoring mode. */
+/** The distinct carriers a relation is scored against, per the scoring mode. May be EMPTY when the
+ *  carrier toggles (cfg.carriers.disabled) exclude everything commensurable — the relation then
+ *  contributes 0 reward (lseMean over the empty set is 0 by definition, no NaN), and quality keeps
+ *  its #relations denominator: turning off everything value-readable honestly zeroes value. */
 export function carriersFor(rel: DataRelation, all: readonly Carrier[], cfg: Config = config): Carrier[] {
   if (cfg.scoring === 'fixed') {
-    return [carrierFor(cfg.fixedCarriers[rel.key], all)];
+    return [carrierFor(cfg.fixedCarriers[rel.key], all)]; // toggles never remove a fixed carrier (registry guard)
   }
   return all.filter((c) => commensurability(rel.type, c.stamp)); // comprehensive: the deduped matrix
 }
@@ -189,7 +192,7 @@ export interface Breakdown {
   quality: number; // reward / maxReward ∈ [0,1] (~0 for random figures: chance floors removed)
   relations: RelationBreakdown[];
   penalties: PenaltyTermExact[];
-  distinctCarriers: number; // deduped carrier count (16 under the v1 geometry)
+  distinctCarriers: number; // ACTIVE deduped carrier count (16 under the v1 geometry, minus toggles)
   censusSize: number; // raw measurement census (26) — kept for the theory display
 }
 

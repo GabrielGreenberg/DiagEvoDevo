@@ -173,6 +173,35 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       re-examine `w_ord/w_int/w_ratio`.
 
 ## Done this project
+- **Carrier toggles (2026-07-02, user-directed): readings on/off dashboard — exploration knob.**
+  Turn individual distinct carriers (readings) off to explore what optima emerge without them
+  (e.g. no mid points, no rise/run). Deepest layer: `config.carriers.disabled` (canonical ids;
+  default empty); `registry.carriers(cfg)` applies the filter AFTER dedup (disabling a merged
+  carrier removes its aliases with it; lenient: an alias id toggles the same carrier), with
+  `registry.allCarriers(cfg)` as the unfiltered set the UI lists. The census shrinks EVERYWHERE at
+  once — both relations' candidate sets, the LSE means' N, the data-ink mean's M, and the panel
+  counts (nothing hardcodes 16/12). Guards: an EMPTY candidate set contributes 0 reward (lseMean
+  over ∅ = 0, no NaN; gradient stays finite), ink over ∅ = 0, quality KEEPS the #relations
+  denominator (honest); in 'fixed' mode a disabled configured fixedCarrier is ignored for that
+  carrier. UI: "Readings" strip (`ui/carrierStrip.ts`, collapsible panel above the score panel) —
+  one chip per distinct carrier, plain labels, grouped start·mid·end·displacement·angles; toggles
+  persist in prefs (`loadDisabledCarriers`, same pattern as maxSteps) and APPLY AT THE NEXT SESSION
+  (Reset/new seed) since sessions snapshot cfg at construction; a "pending — applies on Reset" hint
+  + chip marks show while pending ≠ live, and the panel/chips read the LIVE objective from the
+  SESSION's cfg (`SessionApi.cfg` added; `SessionFactory` now takes the composed cfg). Adversarial
+  tests: filtered census math (exact LSE-over-N−1 and ink-over-M reconstruction from the
+  breakdown), disabled id appears NOWHERE, all-ratio-off ⇒ sales 0 with finite grads, everything-off
+  ⇒ 0/0/0 with zero grads, fixed-mode guard identity, prefs round-trip incl. garbage, live-session-
+  untouched + applies-on-reset + reload restore in the app. Verified: typecheck + 262 tests +
+  build green; live GUI exercised (toggle 4 readings → Reset → 12-carrier census, 74% quality run,
+  reload persistence, zero console errors). REVIEW FIX (same day): a stored/config ALIAS id (e.g.
+  `frame.displacement.magnitude`) excluded the carrier from the census (lenient filter) while its
+  chip — keyed by canonical id — still rendered "on", and clicking could never clear the alias.
+  Added `registry.canonicalDisabledIds(ids, cfg)` (alias→canonical, garbage dropped, deduped);
+  app.ts canonicalizes at the prefs/config boundary so the strip and the census can never disagree
+  (scoring keeps the lenient filter). +2 adversarial tests (registry coherence identity; app-level
+  alias+garbage-in-localStorage → chip off, hint honest, one click clears). Gates re-run: check
+  264/264, build, gradcheck, accept --quick --seeds=1,2 (defaults unaffected).
 - **UI feedback pass (2026-07-02): sticky selection · gallery · persistent results · persistent
   maxSteps.** User requirements, implemented at the session layer + UI: (1) STICKY SELECTION — the
   main canvas/score panel show one trajectory chosen by STABLE id (never reused across slot

@@ -14,9 +14,15 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startApp } from './app';
 import { config } from '../config';
+import { allCarriers } from '../core/measurements/registry';
 import { makeFakeSession, type FakeSession, type FakeSessionOptions } from './fixtures';
 import { clearResults } from '../persistence/store';
-import { clearMaxSteps, clearPlateauRelEps } from '../persistence/prefs';
+import {
+  clearMaxSteps,
+  clearPlateauRelEps,
+  clearDisabledCarriers,
+  loadDisabledCarriers,
+} from '../persistence/prefs';
 
 // jsdom's localStorage lacks the Storage methods in this environment (no URL origin); persistence
 // treats it as absent. Stub a real in-memory Storage so Save/Load AND prefs exercise the true path.
@@ -38,6 +44,7 @@ afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   clearMaxSteps(); // each test starts from the config-default cap
   clearPlateauRelEps(); // …and the config-default convergence strictness
+  clearDisabledCarriers(); // …and every reading on
   clearResults();
 });
 
@@ -48,8 +55,8 @@ function mount(opts: FakeSessionOptions = {}): {
   const sessions: FakeSession[] = [];
   const root = document.createElement('div');
   document.body.appendChild(root);
-  startApp(root, (f, d) => {
-    const s = makeFakeSession(f, d, opts);
+  startApp(root, (f, d, cfg) => {
+    const s = makeFakeSession(f, d, { ...opts, cfg }); // thread the composed cfg (contract)
     sessions.push(s);
     return s;
   });
@@ -258,6 +265,101 @@ describe('app: persistent plateauRelEps (localStorage)', () => {
     const badges = [...root.querySelectorAll('.tbadge')].map((b) => b.textContent);
     expect(badges).toEqual(['converged', 'converged']);
     expect(q<HTMLButtonElement>(root, '[data-a="save"]').disabled).toBe(false);
+    root.remove();
+  });
+});
+
+describe('app: readings toggles (carrier on/off chips)', () => {
+  const LEN = 'page.displacement.magnitude'; // 'length' — a merged carrier with an alias
+  const chip = (root: HTMLElement, id: string): HTMLButtonElement =>
+    q<HTMLButtonElement>(root, `.chip[data-cid="${id}"]`);
+  const pendhint = (root: HTMLElement): HTMLElement => q<HTMLElement>(root, '[data-r="pending"]');
+
+  it('renders one chip per DISTINCT carrier, grouped, all on by default', () => {
+    const { root } = mount();
+    const chips = [...root.querySelectorAll<HTMLElement>('#readingspanel .chip')];
+    const all = allCarriers(config);
+    expect(chips.length).toBe(all.length); // 16 under the v1 geometry — but derived, not hardcoded
+    expect(new Set(chips.map((c) => c.dataset.cid))).toEqual(new Set(all.map((c) => c.id)));
+    expect(chips.every((c) => !c.classList.contains('off'))).toBe(true);
+    expect(chip(root, LEN).textContent).toBe('length'); // plain-English label, no ids
+    expect(root.querySelectorAll('#readingspanel .rgroup').length).toBe(5); // start·mid·end·displacement·angles
+    expect(pendhint(root).hidden).toBe(true); // pending = live at start
+    expect(q<HTMLElement>(root, '[data-r="count"]').textContent).toBe(`${all.length}/${all.length} on`);
+    root.remove();
+  });
+
+  it('clicking toggles the PENDING set only: persisted at once, live session untouched', () => {
+    const { root, sessions } = mount();
+    const before = displayedTotal(root);
+    chip(root, LEN).click();
+    // persisted immediately (survives reloads)…
+    expect(loadDisabledCarriers()).toEqual([LEN]);
+    // …chip shows off + pending, strip hints "applies on Reset"
+    expect(chip(root, LEN).classList.contains('off')).toBe(true);
+    expect(chip(root, LEN).classList.contains('pending')).toBe(true);
+    expect(pendhint(root).hidden).toBe(false);
+    // ADVERSARIAL: the LIVE session keeps its objective — cfg snapshot unchanged, display unchanged
+    expect(sessions.length).toBe(1); // no new session was created
+    expect(sessions[0]!.cfg.carriers.disabled).toEqual([]);
+    step(root);
+    expect(displayedTotal(root)).toBe(before);
+    // clicking again re-enables and clears the hint
+    chip(root, LEN).click();
+    expect(loadDisabledCarriers()).toEqual([]);
+    expect(chip(root, LEN).classList.contains('off')).toBe(false);
+    expect(pendhint(root).hidden).toBe(true);
+    root.remove();
+  });
+
+  it('applies on Reset: the NEXT session is constructed with the disabled set; hint clears', () => {
+    const { root, sessions } = mount();
+    chip(root, LEN).click();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.cfg.carriers.disabled).toEqual([LEN]); // the toggle BIT at construction
+    // pending == live again: hint gone, chip stays off (still excluded, no longer "pending")
+    expect(pendhint(root).hidden).toBe(true);
+    expect(chip(root, LEN).classList.contains('off')).toBe(true);
+    expect(chip(root, LEN).classList.contains('pending')).toBe(false);
+    // …and the disabled reading is genuinely OUT of the running objective's breakdown
+    const b = sessions[1]!.detail(sessions[1]!.trajectories()[0]!.id)!.breakdown;
+    expect(b.distinctCarriers).toBe(allCarriers(config).length - 1);
+    for (const r of b.relations) expect(r.carriers.some((c) => c.id === LEN)).toBe(false);
+    root.remove();
+  });
+
+  it('applies on a NEW SEED session too, and round-trips a "reload" (fresh startApp)', () => {
+    const a = mount();
+    a.root.querySelector<HTMLButtonElement>(`.chip[data-cid="${LEN}"]`)!.click();
+    q<HTMLButtonElement>(a.root, '[data-a="newfig"]').click(); // new figure seed → new session
+    expect(a.sessions[1]!.cfg.carriers.disabled).toEqual([LEN]);
+    a.root.remove();
+    // simulate a page reload: a brand-new app instance over the same localStorage
+    const b = mount();
+    expect(b.sessions[0]!.cfg.carriers.disabled).toEqual([LEN]); // applied to the INITIAL session
+    expect(chip(b.root, LEN).classList.contains('off')).toBe(true);
+    expect(pendhint(b.root).hidden).toBe(true); // pending == live: restored, not "pending"
+    b.root.remove();
+  });
+
+  it('CANONICALIZES stored ids at the boundary: an ALIAS or stale id can never make chips lie', () => {
+    // hand-edited / legacy storage: a merged-away alias of 'length' plus a stale garbage id
+    localStorage.setItem(
+      'diagram-evolver:prefs:disabledCarriers',
+      JSON.stringify(['frame.displacement.magnitude', 'no.such.reading']),
+    );
+    const { root, sessions } = mount();
+    // the session excludes the reading AND the chip shows it — same canonical set everywhere
+    expect(sessions[0]!.cfg.carriers.disabled).toEqual([LEN]);
+    expect(chip(root, LEN).classList.contains('off')).toBe(true);
+    expect(pendhint(root).hidden).toBe(true); // pending == live (no phantom "pending" from garbage)
+    // and the toggle is CLEARABLE: one click re-enables (the alias can't linger in the set)
+    chip(root, LEN).click();
+    expect(loadDisabledCarriers()).toEqual([]);
+    expect(chip(root, LEN).classList.contains('off')).toBe(false);
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions[1]!.cfg.carriers.disabled).toEqual([]); // fully back on
     root.remove();
   });
 });

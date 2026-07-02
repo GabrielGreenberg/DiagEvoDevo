@@ -28,7 +28,12 @@
 //     endpoint. Rejects non-finite / non-positive values. Initial: config.converge.plateauRelEps.
 //   • result(id?): with an id, carries THAT trajectory's figure/score (Save saves the selection);
 //     without one, falls back to best() (bench/accept).
+//   • cfg: the session's OWN config, snapshotted at construction. The UI reads the LIVE objective
+//     from here — e.g. which readings (cfg.carriers.disabled) the running session actually
+//     excludes — never from the pending app-level config, so the panel/chips can't lie about the
+//     running objective. Carrier toggles therefore apply at the NEXT session (Reset / new seed).
 
+import type { Config } from '../config';
 import type { Figure } from '../core/figure';
 import type { Breakdown } from '../core/score';
 import type { SessionResult } from '../optim/session';
@@ -56,6 +61,8 @@ export type SessionStatus = 'running' | 'done';
 
 export interface SessionApi {
   readonly status: SessionStatus;
+  /** The session's config snapshot (fixed at construction) — the RUNNING objective's knobs. */
+  readonly cfg: Config;
   step(): void;
   trajectories(): TrajectoryView[];
   allTrajectories(): TrajectoryView[];
@@ -67,5 +74,7 @@ export interface SessionApi {
   result(id?: number): SessionResult;
 }
 
-/** How the app obtains a session (injectable so UI tests run against a contract fake). */
-export type SessionFactory = (figureSeed: number, dataSeed: number) => SessionApi;
+/** How the app obtains a session (injectable so UI tests run against a contract fake). The app
+ *  composes `cfg` per session — base config plus the pending carrier toggles — and the session
+ *  snapshots it at construction (so toggles apply on Reset / new seed, never mid-run). */
+export type SessionFactory = (figureSeed: number, dataSeed: number, cfg: Config) => SessionApi;

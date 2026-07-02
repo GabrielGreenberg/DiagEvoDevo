@@ -15,7 +15,9 @@ import {
   getMeasurement,
   liveMeasurements,
   carriers,
+  allCarriers,
   carrierFor,
+  canonicalDisabledIds,
 } from './registry';
 import { N_ITEMS, config, type Config } from '../../config';
 
@@ -285,6 +287,103 @@ describe('measurements: v2 distinct-carrier dedup (audit: 10 of 26 cells were ex
     expect(byStamp[ScaleType.Ratio]).toBe(12); // 6 point projections + 3 point dists + run/rise/length
     expect(byStamp[ScaleType.Cyclic]).toBe(4); // 3 point angles + tilt
     expect(byStamp[ScaleType.Interval]).toBe(0); // every page projection was upgraded by its frame twin
+  });
+});
+
+describe('measurements: carrier toggles (cfg.carriers.disabled — the exploration filter)', () => {
+  const withOff = (disabled: string[], base: Config = config): Config => ({
+    ...base,
+    carriers: { disabled },
+  });
+
+  it('default (nothing disabled): carriers() === allCarriers() — the filter is the identity', () => {
+    expect(carriers(config).map((c) => c.id)).toEqual(allCarriers(config).map((c) => c.id));
+    expect(carriers(config).length).toBe(16);
+  });
+
+  it('disabling a merged carrier by CANONICAL id removes it AND its aliases from the census', () => {
+    const cfg = withOff(['page.displacement.magnitude']); // 'length' (alias frame.displacement.magnitude)
+    const act = carriers(cfg);
+    expect(act.length).toBe(15);
+    // the disabled reading is gone in every form: canonical id, alias, carrierFor resolution
+    expect(act.some((c) => c.id === 'page.displacement.magnitude')).toBe(false);
+    expect(act.some((c) => c.aliases.includes('frame.displacement.magnitude'))).toBe(false);
+    expect(() => carrierFor('page.displacement.magnitude', act)).toThrow(/No distinct carrier/);
+    expect(() => carrierFor('frame.displacement.magnitude', act)).toThrow(/No distinct carrier/);
+    // …and allCarriers still lists it (the toggle UI must be able to re-enable it)
+    expect(allCarriers(cfg).some((c) => c.id === 'page.displacement.magnitude')).toBe(true);
+  });
+
+  it('disabling by a merged-away ALIAS id removes the same carrier (lenient resolution)', () => {
+    const act = carriers(withOff(['frame.displacement.magnitude']));
+    expect(act.length).toBe(15);
+    expect(act.some((c) => c.id === 'page.displacement.magnitude')).toBe(false);
+  });
+
+  it('census math shrinks CONSISTENTLY: stamp buckets lose exactly the disabled members', () => {
+    // mid x/y (ratio, canonical frame.midpoint.proj*) + tilt (cyclic 'angle') + run/rise (ratio)
+    const cfg = withOff([
+      'frame.midpoint.projPar',
+      'frame.midpoint.projPerp',
+      'page.displacement.angle',
+      'page.displacement.projPar',
+      'page.displacement.projPerp',
+    ]);
+    const act = carriers(cfg);
+    expect(act.length).toBe(11);
+    const byStamp: Record<string, number> = { ratio: 0, cyclic: 0, interval: 0, ordinal: 0 };
+    for (const c of act) byStamp[c.stamp]!++;
+    expect(byStamp[ScaleType.Ratio]).toBe(8); // 12 − mid x − mid y − run − rise
+    expect(byStamp[ScaleType.Cyclic]).toBe(3); // 4 − tilt
+  });
+
+  it('unknown / stale ids in the disabled list are ignored harmlessly', () => {
+    const act = carriers(withOff(['no.such.reading', 'page.start.magnitude']));
+    expect(act.length).toBe(16);
+  });
+
+  it("FIXED-mode guard: a disabled id that is a configured fixedCarrier is IGNORED for that carrier", () => {
+    const fixedCfg: Config = { ...config, scoring: 'fixed' };
+    const cfg = withOff(
+      [config.fixedCarriers.sales, config.fixedCarriers.order, 'page.displacement.angle'],
+      fixedCfg,
+    );
+    const act = carriers(cfg);
+    // both fixed carriers survive (sales = length; order = start x resolves via its alias)…
+    expect(carrierFor(config.fixedCarriers.sales, act).id).toBe('page.displacement.magnitude');
+    expect(carrierFor(config.fixedCarriers.order, act).id).toBe('frame.start.projPar');
+    // …while a NON-fixed disabled reading is still dropped (the guard is per-carrier, not global)
+    expect(act.some((c) => c.id === 'page.displacement.angle')).toBe(false);
+    expect(act.length).toBe(15);
+    // in COMPREHENSIVE mode the same disable list really does drop the fixed ids (no guard)
+    expect(carriers(withOff([config.fixedCarriers.sales, config.fixedCarriers.order])).length).toBe(14);
+  });
+
+  it('disabling EVERYTHING empties the census (guards downstream must cope — see score tests)', () => {
+    const cfg = withOff(allCarriers(config).map((c) => c.id));
+    expect(carriers(cfg)).toEqual([]);
+  });
+
+  it('canonicalDisabledIds: aliases resolve to canonical ids, garbage drops, duplicates collapse', () => {
+    // alias → canonical (the strip keys chips by canonical id; without this a stored alias would
+    // exclude a reading whose chip still renders "on")
+    expect(canonicalDisabledIds(['frame.displacement.magnitude'])).toEqual([
+      'page.displacement.magnitude',
+    ]);
+    // canonical passes through; alias+canonical of the SAME carrier collapse to one entry
+    expect(
+      canonicalDisabledIds(['page.displacement.magnitude', 'frame.displacement.magnitude']),
+    ).toEqual(['page.displacement.magnitude']);
+    // unknown/stale ids drop out entirely (they can never match a chip OR the census filter)
+    expect(canonicalDisabledIds(['no.such.reading', 'frame.midpoint.angle'])).toEqual([
+      'frame.midpoint.angle',
+    ]);
+    expect(canonicalDisabledIds([])).toEqual([]);
+    // COHERENCE: the canonicalized set filters the census exactly like the raw lenient set
+    const raw = ['frame.displacement.magnitude', 'no.such.reading', 'frame.midpoint.projPar'];
+    expect(carriers(withOff(canonicalDisabledIds(raw))).map((c) => c.id)).toEqual(
+      carriers(withOff(raw)).map((c) => c.id),
+    );
   });
 });
 

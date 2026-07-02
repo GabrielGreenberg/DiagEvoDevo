@@ -223,6 +223,18 @@ export const config = {
   // 'fixed': collapse each relation to a single configured carrier (the earlier bar-chart-only model).
   scoring: 'comprehensive' as 'comprehensive' | 'fixed',
 
+  // ── Carrier toggles (exploration knob; GUI "readings" strip) ──────────────
+  // Canonical distinct-carrier ids (or any of their merged-away aliases) to EXCLUDE from the
+  // census. Exploration knob: excluded readings vanish from the census — both relations'
+  // candidate sets, the LSE means, the data-ink mean, and the panel all follow (every consumer
+  // normalizes by the census it is given, so counts shrink together). `quality` keeps its
+  // denominator #relations — honest: if you turn off everything value-readable, value can't
+  // encode and quality says so. In 'fixed' scoring mode a disabled id that resolves one of the
+  // configured fixedCarriers is IGNORED for that carrier (the fixed objective needs it to exist).
+  carriers: {
+    disabled: [] as string[],
+  },
+
   // ── Assignment policy default (CONCEPT §7: only used in 'fixed'/invention modes) ─
   assignmentPolicy: 'fixed' as 'fixed' | 'best',
 

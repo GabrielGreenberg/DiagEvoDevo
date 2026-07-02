@@ -10,7 +10,7 @@
 // adversarial test stage a leadership overtake without touching real scoring. No Math.random
 // anywhere — fully deterministic from the seeds.
 
-import { config } from '../config';
+import { config, type Config } from '../config';
 import { seedToDataSet } from '../core/data';
 import { seedToFigure, cloneFigure, type Figure } from '../core/figure';
 import { scoreExact, type Breakdown } from '../core/score';
@@ -30,6 +30,8 @@ export interface FakeSessionOptions {
   plateauAt?: (number | undefined)[];
   /** Replacement budget (default 0): finished slot occupants retire and are replaced, like the real session. */
   maxRestarts?: number;
+  /** The session's config snapshot (contract: fixed at construction). Defaults to the base config. */
+  cfg?: Config;
 }
 
 export interface FakeSession extends SessionApi {
@@ -65,6 +67,7 @@ export function makeFakeSession(
   const nSlots = opts.slots ?? 3;
   const plateauAt = opts.plateauAt ?? [];
   const maxRestarts = opts.maxRestarts ?? 0;
+  const cfg = opts.cfg ?? config; // snapshotted, like the real session
   const data = seedToDataSet(dataSeed);
 
   let nextId = 0;
@@ -79,7 +82,7 @@ export function makeFakeSession(
       id,
       slot,
       figure,
-      breakdown: scoreExact(figure, data),
+      breakdown: scoreExact(figure, data, cfg), // the fake scores under ITS OWN cfg, like the real one
       steps: 0,
       kind,
       frozen: null,
@@ -123,8 +126,9 @@ export function makeFakeSession(
     setPlateauRelEpsCalls: [],
     figureSeed,
     dataSeed,
-    maxSteps: config.converge.maxSteps,
-    plateauRelEps: config.converge.plateauRelEps,
+    cfg,
+    maxSteps: cfg.converge.maxSteps,
+    plateauRelEps: cfg.converge.plateauRelEps,
     status: 'running',
 
     step(): void {
@@ -195,7 +199,7 @@ export function makeFakeSession(
         convergedByCap: statusOf(r) === 'capped',
         // real Session.result() reports TOTAL session step() calls, not the trajectory's own count
         steps: sessionSteps,
-        configSnapshot: JSON.parse(JSON.stringify(config)) as typeof config,
+        configSnapshot: JSON.parse(JSON.stringify(cfg)) as Config,
       };
     },
 

@@ -18,6 +18,10 @@
 // A merged carrier keeps the MAX stamp of its members (e.g. 'start x' read against the frame origin
 // is ratio, not interval) and records the merged-away ids as aliases[]. The full 26-cell census
 // stays intact for the theory and its tests.
+//
+// On top of the dedup sits the EXPLORATION FILTER: carriers(cfg) drops the distinct carriers listed
+// in cfg.carriers.disabled (the GUI's readings toggles) AFTER merging, so a toggle removes a merged
+// carrier and its aliases together; allCarriers(cfg) is the unfiltered set the toggle UI lists.
 
 import { N_ITEMS, config, type Config } from '../../config';
 import type { Value } from '../autograd/engine';
@@ -175,10 +179,11 @@ function classKey(m: Measurement, dirsParallel: boolean, originAtPage: boolean):
 }
 
 /**
- * The DEDUPED distinct-carrier set for the configured geometry. The reward, the LSE means, the
- * data-ink penalty, and the panel counts all run over THIS set, never the raw census.
+ * The FULL deduped distinct-carrier set for the configured geometry, ignoring the disabled list.
+ * The UI's readings strip lists THIS set (a disabled carrier must stay listed to be re-enabled);
+ * scoring consumers use `carriers(cfg)`, which applies the exploration filter.
  */
-export function carriers(cfg: Config = config): Carrier[] {
+export function allCarriers(cfg: Config = config): Carrier[] {
   const frame = frameFromConfig(cfg);
   const page = pageFromConfig(cfg);
   const eps = cfg.eps.geom;
@@ -216,6 +221,43 @@ export function carriers(cfg: Config = config): Carrier[] {
     });
   }
   return out;
+}
+
+/**
+ * The ACTIVE distinct-carrier census: allCarriers(cfg) minus cfg.carriers.disabled (exploration
+ * knob — see config). The reward, the LSE means, the data-ink penalty, and the panel counts all
+ * run over THIS set, never the raw census, so an excluded reading vanishes from every consumer at
+ * once. The filter runs AFTER dedup/merging: a carrier is toggled by its canonical id (or,
+ * leniently, by any merged-away alias — they denote the same reading), and disabling it removes
+ * its aliases with it. FIXED-mode guard: a disabled id that resolves one of the configured
+ * fixedCarriers is ignored for that carrier — the fixed objective needs its carrier to exist.
+ */
+export function carriers(cfg: Config = config): Carrier[] {
+  const all = allCarriers(cfg);
+  const off = new Set(cfg.carriers?.disabled ?? []);
+  if (off.size === 0) return all;
+  const hits = (c: Carrier, set: ReadonlySet<string>): boolean =>
+    set.has(c.id) || c.aliases.some((a) => set.has(a));
+  const keep = cfg.scoring === 'fixed' ? new Set(Object.values(cfg.fixedCarriers)) : null;
+  return all.filter((c) => !hits(c, off) || (keep !== null && hits(c, keep)));
+}
+
+/**
+ * Normalize a disabled-ids list to CANONICAL distinct-carrier ids: merged-away aliases resolve to
+ * their carrier's canonical id, unknown/stale ids drop out, duplicates collapse. The UI applies
+ * this at its prefs/config boundary so the readings strip (which keys chips by canonical id) and
+ * the census filter (which is lenient about aliases) can never disagree — without it, a stored
+ * alias id would exclude a reading whose chip still renders "on", and toggling the chip (canonical
+ * id only) could never clear the alias. Scoring itself keeps the lenient filter in carriers().
+ */
+export function canonicalDisabledIds(ids: readonly string[], cfg: Config = config): string[] {
+  const all = allCarriers(cfg);
+  const out = new Set<string>();
+  for (const id of ids) {
+    const c = all.find((k) => k.id === id || k.aliases.includes(id));
+    if (c) out.add(c.id);
+  }
+  return [...out];
 }
 
 /** Resolve a measurement id (canonical OR merged-away alias) to its distinct carrier. */

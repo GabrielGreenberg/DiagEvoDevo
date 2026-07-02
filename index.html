@@ -92,6 +92,27 @@
       .dbar { display: block; height: 100%; background: linear-gradient(90deg, #3b6, #6ad0a8); }
       .dval { text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
 
+      /* READINGS strip (carrier toggles): chip = one distinct carrier; .off = excluded from the
+         NEXT session's census; .pending = differs from the LIVE session's objective. */
+      .readings summary { cursor: pointer; display: flex; align-items: baseline; gap: 8px; list-style: none; }
+      .readings summary::before { content: '▸'; color: var(--muted); font-size: 10px; }
+      .readings[open] summary::before { content: '▾'; }
+      .readings summary h3 { display: inline; margin: 0; font-size: 13px; font-weight: 600; }
+      .rhint { font-size: 10px; margin: 6px 0 2px; }
+      .pendhint {
+        margin-left: auto; font-size: 10px; color: var(--ord);
+        border: 1px solid rgba(242,166,90,0.4); border-radius: 4px; padding: 0 5px;
+      }
+      .rgroup { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+      .rgname { flex: 0 0 76px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+      .chip {
+        font-size: 11px; padding: 1px 7px; border-radius: 10px;
+        background: rgba(91,140,255,0.14); border: 1px solid rgba(91,140,255,0.35); color: var(--ink);
+      }
+      .chip:hover { border-color: var(--accent); }
+      .chip.off { background: transparent; border-color: var(--line); color: var(--muted); text-decoration: line-through; opacity: 0.6; }
+      .chip.pending { box-shadow: 0 0 0 1px var(--ord); }
+
       .scoretop { display: flex; gap: 20px; margin-bottom: 8px; }
       .bignum { display: flex; flex-direction: column; }
       .biglabel { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }

@@ -13,6 +13,7 @@ const initial = (): AppState => ({
   tick: 0,
   maxSteps: config.converge.maxSteps,
   plateauRelEps: config.converge.plateauRelEps,
+  disabledCarriers: config.carriers.disabled,
   selectedId: 0,
   loaded: null,
   saveCount: 0,

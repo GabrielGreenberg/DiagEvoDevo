@@ -10,8 +10,11 @@ import { config, type Config } from '../config';
 import { cloneFigure, segBase, seedToFigure, type Figure } from './figure';
 import { pageFromConfig, frameFromConfig } from './frame';
 import { scoreExact, scoreValue, type RelationBreakdown } from './score';
+import { gradScore } from './gradient';
 import { seedToDataSet } from './data';
-import { REGISTRY, carriers } from './measurements/registry';
+import { REGISTRY, carriers, allCarriers } from './measurements/registry';
+import { lseMeanN } from './fidelity/ladder';
+import { ScaleType } from './scale';
 import { frozenDof } from './penalties/frozenDof';
 import { economy } from './penalties/economy';
 import type { PenaltyContext } from './penalties/registry';
@@ -116,6 +119,121 @@ describe('score v2 (comprehensive): distinct-carrier matrix', () => {
       expect(scoreExact(seedToFigure(s), data).quality).toBeLessThan(0.25);
     }
     expect(scoreExact(golden, data).quality).toBeGreaterThan(0.6);
+  });
+});
+
+describe('score v2: carrier toggles (cfg.carriers.disabled) — the census shrinks EVERYWHERE at once', () => {
+  const withOff = (disabled: string[], base: Config = config): Config => ({
+    ...base,
+    carriers: { disabled },
+  });
+
+  it('a disabled top carrier vanishes from the WHOLE breakdown and the LSE means renormalize (N shrinks)', () => {
+    const base = scoreExact(golden, data);
+    const off = scoreExact(golden, data, withOff(['page.displacement.magnitude'])); // 'length'
+    // the disabled reading appears NOWHERE: not as a row id, not as an alias
+    for (const r of off.relations) {
+      for (const c of r.carriers) {
+        expect(c.id).not.toBe('page.displacement.magnitude');
+        expect(c.aliases).not.toContain('frame.displacement.magnitude');
+      }
+    }
+    // counts shrink together: distinct census, sales candidates, order candidates
+    expect(off.distinctCarriers).toBe(15);
+    expect(off.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(11);
+    expect(off.relations.find((r) => r.key === 'order')!.carriers.length).toBe(15);
+    // EXACT consistency: each relation's new LSE equals the LSE over the base qs minus the
+    // disabled row — i.e. the mean's N really became N−1 (nothing hardcodes 12/16)
+    for (const key of ['sales', 'order'] as const) {
+      const baseQs = base.relations
+        .find((r) => r.key === key)!
+        .carriers.filter((c) => c.id !== 'page.displacement.magnitude')
+        .map((c) => c.q);
+      expect(off.relations.find((r) => r.key === key)!.aggregated).toBeCloseTo(
+        lseMeanN(baseQs, config.aggregation.beta),
+        9,
+      );
+    }
+    // length is golden's best sales carrier: removing it must LOWER the sales relation
+    expect(off.relations.find((r) => r.key === 'sales')!.aggregated).toBeLessThan(
+      base.relations.find((r) => r.key === 'sales')!.aggregated,
+    );
+  });
+
+  it('the data-ink mean renormalizes to the ACTIVE census (M shrinks with N)', () => {
+    const off = scoreExact(
+      golden,
+      data,
+      withOff(['page.displacement.magnitude', 'frame.midpoint.angle']),
+    );
+    // Reconstruct ink from the breakdown itself: mean_m s_m·(1 − smoothmax_R q_m(R)) over the 14
+    // ACTIVE carriers (order is commensurable with every stamp, so its rows list all of them).
+    const cells = new Map<string, { sal: number; qs: number[] }>();
+    for (const r of off.relations) {
+      for (const c of r.carriers) {
+        const cell = cells.get(c.id) ?? { sal: c.salience, qs: [] };
+        cell.qs.push(c.q);
+        cells.set(c.id, cell);
+      }
+    }
+    expect(cells.size).toBe(14);
+    let ink = 0;
+    for (const { sal, qs } of cells.values()) ink += sal * (1 - lseMeanN(qs, config.aggregation.beta));
+    ink /= cells.size;
+    expect(off.penalties.find((p) => p.name === 'spuriousness')!.value).toBeCloseTo(ink, 9);
+  });
+
+  it('EMPTY-relation guard: disabling ALL ratio carriers zeroes sales — no NaN, quality stays honest', () => {
+    const ratioIds = allCarriers(config)
+      .filter((c) => c.stamp === ScaleType.Ratio)
+      .map((c) => c.id);
+    const cfg = withOff(ratioIds);
+    const b = scoreExact(golden, data, cfg);
+    const sales = b.relations.find((r) => r.key === 'sales')!;
+    expect(sales.carriers.length).toBe(0);
+    expect(sales.aggregated).toBe(0); // lseMean over the empty set is 0 by definition
+    expect(b.maxReward).toBe(2); // quality KEEPS the #relations denominator: value honestly can't encode
+    expect(Number.isFinite(b.total)).toBe(true);
+    expect(b.quality).toBeCloseTo(b.relations.find((r) => r.key === 'order')!.aggregated / 2, 12);
+    // the differentiable path (the optimizer's objective) is finite and gradcheck-safe too
+    expect(Number.isFinite(scoreValue(leavesOf(golden), data, cfg).total.data)).toBe(true);
+    const gs = gradScore(golden, data, cfg);
+    expect(Number.isFinite(gs.score)).toBe(true);
+    for (const g of gs.grad) expect(Number.isFinite(g)).toBe(true);
+  });
+
+  it('disabling EVERYTHING: reward 0, ink 0, total 0 — and the gradient is finite (all zeros)', () => {
+    const cfg = withOff(allCarriers(config).map((c) => c.id));
+    const b = scoreExact(golden, data, cfg);
+    expect(b.reward).toBe(0);
+    expect(b.penalties.find((p) => p.name === 'spuriousness')!.value).toBe(0); // ink over ∅ = 0
+    expect(b.total).toBe(0);
+    expect(b.quality).toBe(0);
+    expect(b.distinctCarriers).toBe(0);
+    const gs = gradScore(seedToFigure(3), data, cfg);
+    expect(Number.isFinite(gs.score)).toBe(true);
+    for (const g of gs.grad) expect(g).toBe(0);
+  });
+
+  it('FIXED mode ignores disables of its configured carriers (the objective needs them to exist)', () => {
+    const a = scoreExact(golden, data, fixed);
+    const b = scoreExact(
+      golden,
+      data,
+      withOff([config.fixedCarriers.sales, config.fixedCarriers.order], fixed),
+    );
+    expect(b.total).toBeCloseTo(a.total, 12);
+    expect(b.reward).toBeCloseTo(a.reward, 12);
+    expect(b.distinctCarriers).toBe(a.distinctCarriers);
+    for (const key of ['sales', 'order'] as const) {
+      expect(b.relations.find((r) => r.key === key)!.carriers.map((c) => c.id)).toEqual(
+        a.relations.find((r) => r.key === key)!.carriers.map((c) => c.id),
+      );
+    }
+    // a NON-fixed reading still toggles in fixed mode (the guard is per-carrier, not global):
+    // the ink census M shrinks by one
+    const c = scoreExact(golden, data, withOff(['frame.midpoint.angle'], fixed));
+    expect(c.distinctCarriers).toBe(15);
   });
 });
 

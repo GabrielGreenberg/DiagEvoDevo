@@ -25,6 +25,10 @@ export interface AppState {
   /** The live convergence strictness (session.setPlateauRelEps): the relative score spread below
    *  which a trajectory plateaus. Persists exactly like maxSteps (spec: plateau-eps control). */
   plateauRelEps: number;
+  /** The PENDING disabled-readings set (canonical distinct-carrier ids). Persists like maxSteps
+   *  (prefs) but — unlike the live knobs above — applies only at the NEXT session (Reset / new
+   *  seed): sessions snapshot their cfg at construction (spec: carrier toggles). */
+  disabledCarriers: readonly string[];
   loaded: SessionResult | null; // a loaded saved result being reviewed (overrides the live figure)
   saveCount: number;
 }

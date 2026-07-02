@@ -12,6 +12,9 @@ import {
   loadPlateauRelEps,
   savePlateauRelEps,
   clearPlateauRelEps,
+  loadDisabledCarriers,
+  saveDisabledCarriers,
+  clearDisabledCarriers,
 } from './prefs';
 
 function memoryStorage(): Storage {
@@ -32,6 +35,7 @@ afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   clearMaxSteps();
   clearPlateauRelEps();
+  clearDisabledCarriers();
 });
 
 describe('prefs: persistent maxSteps', () => {
@@ -99,5 +103,50 @@ describe('prefs: persistent plateauRelEps (convergence strictness)', () => {
     expect(loadPlateauRelEps()).toBeNull(); // a non-positive threshold is meaningless
     localStorage.setItem('diagram-evolver:prefs:plateauRelEps', '-3e-4');
     expect(loadPlateauRelEps()).toBeNull();
+  });
+});
+
+describe('prefs: persistent disabledCarriers (readings toggles)', () => {
+  it('round-trips a set of ids EXACTLY, including the empty set (reload semantics)', () => {
+    expect(loadDisabledCarriers()).toBeNull(); // absent → caller falls back to config default
+    saveDisabledCarriers(['page.displacement.magnitude', 'frame.midpoint.angle']);
+    expect(loadDisabledCarriers()).toEqual(['page.displacement.magnitude', 'frame.midpoint.angle']);
+    saveDisabledCarriers([]); // explicitly "everything on" is a VALID stored state, not absence
+    expect(loadDisabledCarriers()).toEqual([]);
+    clearDisabledCarriers();
+    expect(loadDisabledCarriers()).toBeNull();
+  });
+
+  it('dedupes on save (a double-toggled id is stored once)', () => {
+    saveDisabledCarriers(['a.b.c', 'a.b.c', 'x.y.z']);
+    expect(loadDisabledCarriers()).toEqual(['a.b.c', 'x.y.z']);
+  });
+
+  it('refuses to persist garbage: non-arrays and non-string members leave the store untouched', () => {
+    saveDisabledCarriers(['page.displacement.angle']);
+    saveDisabledCarriers([1, 'x'] as unknown as string[]);
+    saveDisabledCarriers('nope' as unknown as string[]);
+    expect(loadDisabledCarriers()).toEqual(['page.displacement.angle']);
+  });
+
+  it('garbage IN storage reads as null (fallback to config default)', () => {
+    const KEY = 'diagram-evolver:prefs:disabledCarriers';
+    localStorage.setItem(KEY, 'not-json{');
+    expect(loadDisabledCarriers()).toBeNull();
+    localStorage.setItem(KEY, '{"a":1}'); // valid JSON, wrong shape
+    expect(loadDisabledCarriers()).toBeNull();
+    localStorage.setItem(KEY, '["ok", 7]'); // array with a non-string member
+    expect(loadDisabledCarriers()).toBeNull();
+    localStorage.setItem(KEY, '["ok","ok","dup"]'); // stored duplicates read back deduped
+    expect(loadDisabledCarriers()).toEqual(['ok', 'dup']);
+  });
+
+  it('is independent of the other preferences (separate keys)', () => {
+    saveMaxSteps(777);
+    saveDisabledCarriers(['a.b.c']);
+    clearMaxSteps();
+    expect(loadDisabledCarriers()).toEqual(['a.b.c']);
+    clearDisabledCarriers();
+    expect(loadMaxSteps()).toBeNull();
   });
 });

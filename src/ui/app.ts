@@ -14,11 +14,16 @@
 //     canvas, score panel, gallery, and captions freeze as they ended until Reset / new seed.
 //   • PERSISTENT maxSteps AND plateauRelEps — both live in localStorage (persistence/prefs):
 //     stored value > config default, surviving Reset, new seeds, and page reloads.
+//   • CARRIER TOGGLES (readings strip) — the pending disabled set persists in prefs like maxSteps
+//     but applies at the NEXT session only: newSession composes {...config, carriers: {disabled}}
+//     for session construction, while the panel/chips read the LIVE objective from the SESSION's
+//     snapshotted cfg, so the display never lies about the running objective.
 //   • Save persists the SELECTED trajectory (result(selectedId)), i.e. what the user is looking at.
 
-import { config } from '../config';
+import { config, type Config } from '../config';
 import { seedToDataSet } from '../core/data';
 import { frameFromConfig } from '../core/frame';
+import { canonicalDisabledIds } from '../core/measurements/registry';
 import { createSession } from '../optim/session';
 import { saveResult, loadLatest } from '../persistence/store';
 import {
@@ -26,6 +31,8 @@ import {
   saveMaxSteps,
   loadPlateauRelEps,
   savePlateauRelEps,
+  loadDisabledCarriers,
+  saveDisabledCarriers,
 } from '../persistence/prefs';
 import { createStore, type AppState } from './store';
 import type { SessionApi, SessionFactory } from './sessionApi';
@@ -34,12 +41,19 @@ import { createTrajStripState, renderTrajStrip } from './trajStrip';
 import { renderDataPanel } from './dataPanel';
 import { renderScorePanel } from './scorePanel';
 import { mountControls, updateControls, type ControlCallbacks } from './controls';
+import { mountCarrierStrip, updateCarrierStrip } from './carrierStrip';
 
 const randomSeed = (): number => Math.floor(Math.random() * 1_000_000) + 1;
 
 // The production factory: src/optim/session implements the contract — the Session class satisfies
 // SessionApi structurally, no cast needed.
-const defaultFactory: SessionFactory = (figureSeed, dataSeed) => createSession(figureSeed, dataSeed);
+const defaultFactory: SessionFactory = (figureSeed, dataSeed, cfg) =>
+  createSession(figureSeed, dataSeed, cfg);
+
+/** The per-session config: base config plus the pending carrier toggles (sessions snapshot it). */
+function sessionCfg(disabled: readonly string[]): Config {
+  return { ...config, carriers: { disabled: [...disabled] } };
+}
 
 export function startApp(root: HTMLElement, makeSession: SessionFactory = defaultFactory): void {
   root.innerHTML = `
@@ -55,6 +69,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       </section>
       <aside class="sidepane">
         <div class="panel datapanel" id="datapanel"></div>
+        <div class="panel readingspanel" id="readingspanel"></div>
         <div class="panel scorepanel" id="scorepanel"></div>
       </aside>
     </main>`;
@@ -63,6 +78,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   const stripRoot = root.querySelector('#trajstrip') as HTMLElement;
   const controlsRoot = root.querySelector('#controls') as HTMLElement;
   const dataRoot = root.querySelector('#datapanel') as HTMLElement;
+  const readingsRoot = root.querySelector('#readingspanel') as HTMLElement;
   const scoreRoot = root.querySelector('#scorepanel') as HTMLElement;
   const caption = root.querySelector('#figcaption') as HTMLElement;
 
@@ -72,10 +88,14 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   let liveData = seedToDataSet(config.seeds.data); // the dataset the live session targets
   const posited = frameFromConfig();
 
-  // maxSteps / plateauRelEps precedence: localStorage (survives reloads) > config default.
+  // maxSteps / plateauRelEps / disabled-readings precedence: localStorage > config default.
   const initialMaxSteps = loadMaxSteps() ?? config.converge.maxSteps;
   const initialPlateauRelEps = loadPlateauRelEps() ?? config.converge.plateauRelEps;
-  const initialSession = makeSession(config.seeds.figure, config.seeds.data);
+  // Canonicalize at the boundary (registry.canonicalDisabledIds): stored/config ids may be
+  // merged-away ALIASES (the census filter is lenient) or stale garbage — the strip keys chips by
+  // canonical id, so the pending set must be canonical or the chips would lie about the census.
+  const initialDisabled = canonicalDisabledIds(loadDisabledCarriers() ?? config.carriers.disabled);
+  const initialSession = makeSession(config.seeds.figure, config.seeds.data, sessionCfg(initialDisabled));
   if (initialMaxSteps !== config.converge.maxSteps) initialSession.setMaxSteps(initialMaxSteps);
   if (initialPlateauRelEps !== config.converge.plateauRelEps) {
     initialSession.setPlateauRelEps(initialPlateauRelEps);
@@ -89,6 +109,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     tick: 0,
     maxSteps: initialMaxSteps,
     plateauRelEps: initialPlateauRelEps,
+    disabledCarriers: initialDisabled,
     selectedId: firstId(initialSession), // sticky selection defaults to the first trajectory
     loaded: null,
     saveCount: 0,
@@ -100,10 +121,11 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   }
 
   /** Fresh session for (possibly new) seeds. This is the ONLY full display clear (explicit Reset /
-   *  seed change); maxSteps AND plateauRelEps PERSIST across it (store + localStorage). */
+   *  seed change); maxSteps, plateauRelEps AND the carrier toggles PERSIST across it (store +
+   *  localStorage) — this is also where pending toggles finally BITE (snapshotted into the cfg). */
   function newSession(figureSeed: number, dataSeed: number): void {
-    const { maxSteps, plateauRelEps } = store.get();
-    const session = makeSession(figureSeed, dataSeed);
+    const { maxSteps, plateauRelEps, disabledCarriers } = store.get();
+    const session = makeSession(figureSeed, dataSeed, sessionCfg(disabledCarriers));
     session.setMaxSteps(maxSteps);
     session.setPlateauRelEps(plateauRelEps);
     mainView = createViewport();
@@ -169,6 +191,17 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
 
   mountControls(controlsRoot, cb);
 
+  // READINGS strip: toggles persist immediately (prefs) but bite at the NEXT session only —
+  // the live session's cfg is a construction-time snapshot (spec: carrier toggles).
+  mountCarrierStrip(readingsRoot, {
+    onToggleCarrier: (id) => {
+      const cur = store.get().disabledCarriers;
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      saveDisabledCarriers(next); // persist FIRST: survives Reset, new seeds, and reloads
+      store.set({ disabledCarriers: next }); // pending only — the live session is untouched
+    },
+  });
+
   // Sticky selection: the ONLY place selectedId changes besides newSession — a thumbnail click.
   stripRoot.addEventListener('click', (e) => {
     const cell = (e.target as HTMLElement).closest('.traj') as HTMLElement | null;
@@ -180,10 +213,16 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     renderFrame();
   });
 
-  // structural render (only on notify: new seed, mode change, selection, load)
+  // structural render (only on notify: new seed, mode change, selection, toggle, load)
   store.subscribe((s: AppState) => {
     renderDataPanel(dataRoot, s.loaded ? s.loaded.data : liveData);
     updateControls(controlsRoot, s);
+    // pending = the stored toggle set; live = the SESSION's snapshotted cfg (never the pending
+    // one), so the strip's pending marks/hint are honest about the running objective
+    updateCarrierStrip(readingsRoot, {
+      pendingDisabled: new Set(s.disabledCarriers),
+      liveDisabled: new Set(s.session.cfg.carriers?.disabled ?? []),
+    });
     caption.textContent = s.loaded
       ? `Loaded — figure seed ${s.loaded.figureSeed}, data seed ${s.loaded.dataSeed}, ${s.loaded.steps} steps${s.loaded.convergedByCap ? ' (by cap)' : ''}`
       : liveCaption(s); // same live caption at every mode — nothing is cleared at 'done'
