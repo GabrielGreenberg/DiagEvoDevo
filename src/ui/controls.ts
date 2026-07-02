@@ -6,6 +6,7 @@
 // loop never clobbers an input the user is typing.
 
 import { config } from '../config';
+import { REFERENCE_ID } from './reference';
 import type { AppState } from './store';
 
 export interface ControlCallbacks {
@@ -97,8 +98,11 @@ export function updateControls(root: HTMLElement, s: AppState): void {
   runpause.textContent = s.mode === 'running' ? '⏸ Pause' : '▶ Run';
   // the session is done (all trajectories played out) — nothing left to run
   runpause.disabled = s.mode === 'done';
-  // Save enabled only once the session is done (ARCHITECTURE.md: convergence enables Save)
-  save.disabled = s.mode !== 'done';
+  // Save enabled only once the session is done (ARCHITECTURE.md: convergence enables Save) AND a
+  // real trajectory is selected — the reference cell is a benchmark, not an evolved result.
+  const refSelected = s.selectedId === REFERENCE_ID;
+  save.disabled = s.mode !== 'done' || refSelected;
+  save.title = refSelected ? 'reference chart — not an evolved result' : '';
   // reflect state without clobbering an input the user is editing
   if (document.activeElement !== figseed) figseed.value = String(s.figureSeed);
   if (document.activeElement !== dataseed) dataseed.value = String(s.dataSeed);

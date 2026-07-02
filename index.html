@@ -62,13 +62,20 @@
          horizontal scroll on overflow. Click = sticky selection (accent border, does not move on
          its own); ★ = current best by exact total (subtle, may move). */
       .trajstrip { display: flex; gap: 8px; padding-top: 8px; overflow-x: auto; }
-      .traj {
+      .traj, .refcell {
         flex: 0 0 auto; width: 128px; border: 1px solid var(--line); border-radius: 8px;
         background: var(--panel); padding: 4px; cursor: pointer;
       }
-      .traj:hover { border-color: #3a4055; }
-      .traj.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+      .traj:hover, .refcell:hover { border-color: #3a4055; }
+      .traj.selected, .refcell.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
       .traj.best .tscore::after { content: ' ★'; color: var(--ord); font-size: 9px; }
+      /* the permanent REFERENCE cell (hand-built golden bars): dashed = benchmark, not evolved.
+         Its "bars" badge (.rbadge) replaces the status badge + kind tag — it never runs. */
+      .refcell { border-style: dashed; }
+      .rbadge {
+        border-radius: 4px; padding: 0 4px; font-size: 9px; text-transform: uppercase;
+        letter-spacing: 0.03em; background: rgba(139,144,163,0.18); color: var(--muted);
+      }
       .trajcanvas { width: 118px; height: 78px; display: block; background: #0d0f16; border-radius: 5px; }
       .trajmeta { display: flex; align-items: center; gap: 5px; padding-top: 3px; font-size: 10px; font-family: ui-monospace, monospace; }
       .tscore { font-weight: 600; }

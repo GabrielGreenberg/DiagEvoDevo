@@ -18,6 +18,10 @@
 //     but applies at the NEXT session only: newSession composes {...config, carriers: {disabled}}
 //     for session construction, while the panel/chips read the LIVE objective from the SESSION's
 //     snapshotted cfg, so the display never lies about the running objective.
+//   • REFERENCE CELL (config.ui.showReferenceBars) — a permanent benchmark FIRST in the gallery:
+//     the golden bars of the session's dataset, scored ONCE per session under the SESSION's
+//     snapshotted cfg (so toggles/knobs apply) and rebuilt on Reset / new seeds. Selectable via
+//     the sentinel REFERENCE_ID; never the default selection, never Save-able, never the ★ best.
 //   • Save persists the SELECTED trajectory (result(selectedId)), i.e. what the user is looking at.
 
 import { config, type Config } from '../config';
@@ -35,6 +39,7 @@ import {
   saveDisabledCarriers,
 } from '../persistence/prefs';
 import { createStore, type AppState } from './store';
+import { buildReference, REFERENCE_ID, type ReferenceView } from './reference';
 import type { SessionApi, SessionFactory } from './sessionApi';
 import { createViewport, updateViewport, renderCanvas, type Viewport } from './canvas';
 import { createTrajStripState, renderTrajStrip } from './trajStrip';
@@ -88,6 +93,12 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   let liveData = seedToDataSet(config.seeds.data); // the dataset the live session targets
   const posited = frameFromConfig();
 
+  /** The gallery's REFERENCE cell, built + scored ONCE per session under the SESSION's snapshotted
+   *  cfg (never the pending app-level one — same honesty rule as the readings strip). Null when
+   *  the display knob is off. Rebuilt wherever a session is (Reset / new seeds). */
+  const makeReference = (dataSeed: number, session: SessionApi): ReferenceView | null =>
+    config.ui.showReferenceBars ? buildReference(dataSeed, session.cfg) : null;
+
   // maxSteps / plateauRelEps / disabled-readings precedence: localStorage > config default.
   const initialMaxSteps = loadMaxSteps() ?? config.converge.maxSteps;
   const initialPlateauRelEps = loadPlateauRelEps() ?? config.converge.plateauRelEps;
@@ -100,6 +111,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   if (initialPlateauRelEps !== config.converge.plateauRelEps) {
     initialSession.setPlateauRelEps(initialPlateauRelEps);
   }
+  let reference = makeReference(config.seeds.data, initialSession);
 
   const store = createStore({
     session: initialSession,
@@ -131,6 +143,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     mainView = createViewport();
     stripState = createTrajStripState();
     liveData = seedToDataSet(dataSeed);
+    reference = makeReference(dataSeed, session); // rebuilt: new dataset and/or newly-bitten toggles
     store.set({ session, figureSeed, dataSeed, mode: 'idle', selectedId: firstId(session), loaded: null });
     renderFrame();
   }
@@ -178,6 +191,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     // Save persists the SELECTED trajectory — what the main canvas/score panel show — not best().
     onSave: () => {
       const s = store.get();
+      if (s.selectedId === REFERENCE_ID) return; // reference chart — not an evolved result
       store.set({ saveCount: saveResult(s.session.result(s.selectedId)) });
     },
     onLoad: () => {
@@ -202,9 +216,10 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     },
   });
 
-  // Sticky selection: the ONLY place selectedId changes besides newSession — a thumbnail click.
+  // Sticky selection: the ONLY place selectedId changes besides newSession — a thumbnail click
+  // (the reference cell included: it selects via the sentinel REFERENCE_ID like any thumbnail).
   stripRoot.addEventListener('click', (e) => {
-    const cell = (e.target as HTMLElement).closest('.traj') as HTMLElement | null;
+    const cell = (e.target as HTMLElement).closest('.traj, .refcell') as HTMLElement | null;
     if (!cell || store.get().loaded) return;
     const id = Number(cell.dataset.id);
     if (!Number.isFinite(id) || id === store.get().selectedId) return;
@@ -255,16 +270,27 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       renderScorePanel(scoreRoot, { breakdown: s.loaded.score, steps: s.loaded.steps, status: 'loaded' });
       return;
     }
-    // STICKY selection drives the display: session.best() is deliberately absent here.
+    // STICKY selection drives the display: session.best() is deliberately absent here. The
+    // reference cell (sentinel id) displays exactly like a trajectory — figure + full breakdown.
     const all = s.session.allTrajectories();
-    const sel = s.session.detail(s.selectedId) ?? s.session.detail(all[0]?.id ?? 0);
-    if (sel) {
-      updateViewport(mainView, sel.figure, posited); // expand-only lerp; never refits
-      renderCanvas(canvas, sel.figure, mainView, { labels: liveData.labels, frame: posited });
-      const st = statusLine(s);
-      renderScorePanel(scoreRoot, { breakdown: sel.breakdown, steps: st.steps, status: st.text });
+    const st = statusLine(s);
+    if (s.selectedId === REFERENCE_ID && reference) {
+      updateViewport(mainView, reference.figure, posited); // same expand-only viewport rule
+      renderCanvas(canvas, reference.figure, mainView, { labels: liveData.labels, frame: posited });
+      renderScorePanel(scoreRoot, {
+        breakdown: reference.breakdown,
+        steps: st.steps,
+        status: `reference bars (not evolved) · ${st.text}`,
+      });
+    } else {
+      const sel = s.session.detail(s.selectedId) ?? s.session.detail(all[0]?.id ?? 0);
+      if (sel) {
+        updateViewport(mainView, sel.figure, posited); // expand-only lerp; never refits
+        renderCanvas(canvas, sel.figure, mainView, { labels: liveData.labels, frame: posited });
+        renderScorePanel(scoreRoot, { breakdown: sel.breakdown, steps: st.steps, status: st.text });
+      }
     }
-    renderTrajStrip(stripRoot, all, stripState, s.selectedId);
+    renderTrajStrip(stripRoot, all, stripState, s.selectedId, reference);
   }
 
   function loop(): void {

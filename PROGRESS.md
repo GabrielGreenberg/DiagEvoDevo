@@ -40,6 +40,14 @@ optima; the specific length+position sales pairing hasn't emerged yet — next l
 frame), awaiting user green-light. UI: "plateau eps" input (live via session.setPlateauRelEps,
 persisted in prefs like max steps; smaller = stricter = runs continue longer).
 
+### Reference bars in the gallery (2026-07-02, user request)
+The gallery's first cell is now a permanent REFERENCE: the loud golden bar chart of the current
+dataset (`core/fixtures.loudGoldenBarChart` — the same layout the acceptance gates use), scored
+under the SESSION's live objective (data seed, knobs, disabled readings all apply), rebuilt each
+Reset/new seed. Selectable like any thumbnail (main canvas + full breakdown); excluded from
+★/best/result; Save disabled while selected ("reference chart — not an evolved result");
+`config.ui.showReferenceBars` to hide. `accept.ts` now imports the shared fixture. 272 tests green.
+
 ### The audit (2026-07-01)
 An 87-agent adversarial audit (every finding confirmed by ≥2/3 independent verifiers with numeric
 reproductions; ~110 scripts preserved in `scratch/` — reuse as probes, never modify) proved the v1

@@ -71,6 +71,14 @@ export function valueScale(data: DataSet, span = 100): number {
   return vmax > 0 ? span / vmax : 1;
 }
 
+/** The LOUD golden layout (2026-07-02 acceptance finding): spacing 100 puts the x-position ORDER
+ *  carriers far above the reader-resolution θ_len (salience ≈ 1.0, like session endpoints), unlike
+ *  the 0.92-salient spacing-10 default — comparisons against evolved figures are like-for-like.
+ *  Used by scripts/accept.ts (gate fixtures) and the GUI's reference cell (src/ui/reference.ts). */
+export function loudGoldenBarChart(data: DataSet): Figure {
+  return goldenBarChart(data, { k: valueScale(data), spacing: 100, x0: 5 });
+}
+
 /** Bars sorted by VALUE, not label: sales gains x as a carrier, the order axis is destroyed. */
 export function valueSortedBars(data: DataSet, k = valueScale(data)): Figure {
   const idx = Array.from({ length: N_ITEMS }, (_, i) => i).sort(

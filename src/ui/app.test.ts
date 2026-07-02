@@ -13,8 +13,12 @@
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startApp } from './app';
-import { config } from '../config';
+import { config, type Config } from '../config';
+import { seedToDataSet } from '../core/data';
+import { loudGoldenBarChart } from '../core/fixtures';
+import { scoreExact } from '../core/score';
 import { allCarriers } from '../core/measurements/registry';
+import { REFERENCE_ID } from './reference';
 import { makeFakeSession, type FakeSession, type FakeSessionOptions } from './fixtures';
 import { clearResults } from '../persistence/store';
 import {
@@ -388,5 +392,167 @@ describe('app: Save/Load', () => {
     expect(q<HTMLElement>(root, '#figcaption').textContent).toContain('Loaded');
     expect(cells(root).length).toBe(0); // review mode is an explicit display takeover
     root.remove();
+  });
+});
+
+describe('app: REFERENCE cell (golden bars benchmark)', () => {
+  const LEN = 'page.displacement.magnitude';
+  const click = (el: HTMLElement): void =>
+    void el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const refCell = (root: HTMLElement): HTMLElement => q<HTMLElement>(root, '.refcell');
+  const refScore = (root: HTMLElement): string =>
+    q<HTMLElement>(root, '.refcell .tscore').textContent!;
+  /** The reference's expected displayed total: golden bars of the dataset, scored under cfg. */
+  const refTotal = (dataSeed: number, cfg: Config = config): string => {
+    const d = seedToDataSet(dataSeed);
+    return scoreExact(loudGoldenBarChart(d), d, cfg).total.toFixed(3);
+  };
+
+  it('renders FIRST with the "bars" badge (no status badge, no kind tag) and its exact total', () => {
+    const { root } = mount({ slots: 3 });
+    const strip = q<HTMLElement>(root, '#trajstrip');
+    const first = strip.firstElementChild as HTMLElement;
+    expect(first.classList.contains('refcell')).toBe(true);
+    expect(first.dataset.id).toBe(String(REFERENCE_ID));
+    expect(first.querySelector('[data-t="ref"]')!.textContent).toBe('bars'); // badge, not a kind tag
+    expect(first.querySelector('[data-t="status"]')).toBeNull(); // it is not an optimization
+    expect(first.querySelector('[data-t="kind"]')).toBeNull();
+    expect(refScore(root)).toBe(refTotal(config.seeds.data));
+    // every trajectory thumbnail comes AFTER it, untouched (ids and count as before)
+    expect([...strip.children].slice(1).every((c) => c.classList.contains('traj'))).toBe(true);
+    expect(cells(root).map((c) => c.dataset.id)).toEqual(['0', '1', '2']);
+    // default selection at session start remains the FIRST REAL TRAJECTORY, never the reference
+    expect(selectedId(root)).toBe('0');
+    expect(first.classList.contains('selected')).toBe(false);
+    root.remove();
+  });
+
+  it('selecting it shows its full breakdown and DISABLES Save; a trajectory click re-arms Save', () => {
+    const { root, sessions } = mount({ slots: 2, plateauAt: [1, 1] });
+    step(root); // both plateau → done → Save armed
+    expect(sessions[0]!.status).toBe('done');
+    const save = q<HTMLButtonElement>(root, '[data-a="save"]');
+    expect(save.disabled).toBe(false);
+    click(refCell(root));
+    // sticky rules unchanged: the reference is now the ONE selected cell
+    expect(refCell(root).classList.contains('selected')).toBe(true);
+    expect(root.querySelectorAll('.traj.selected').length).toBe(0);
+    // main display shows the reference figure's breakdown (total + status marker)
+    expect(displayedTotal(root)).toBe(refTotal(config.seeds.data));
+    expect(q<HTMLElement>(root, '.statusrow').textContent).toContain('reference');
+    // Save is disabled with the explanatory tooltip — a benchmark is not an evolved result
+    expect(save.disabled).toBe(true);
+    expect(save.title).toBe('reference chart — not an evolved result');
+    // …and the reference itself SURVIVED done untouched (still first, still badged)
+    expect(q<HTMLElement>(root, '#trajstrip').firstElementChild).toBe(refCell(root));
+    expect(refCell(root).querySelector('[data-t="ref"]')!.textContent).toBe('bars');
+    // selecting a real trajectory re-enables Save and clears the tooltip
+    click(q<HTMLElement>(root, '.traj[data-id="0"]'));
+    expect(save.disabled).toBe(false);
+    expect(save.title).toBe('');
+    root.remove();
+  });
+
+  it('is scored under the SESSION cfg: a disabled reading changes it on the NEXT session only', () => {
+    const { root, sessions } = mount();
+    const before = refScore(root);
+    q<HTMLButtonElement>(root, `.chip[data-cid="${LEN}"]`).click(); // pending toggle
+    step(root);
+    // ADVERSARIAL: the live session's reference is a construction-time snapshot — untouched
+    expect(refScore(root)).toBe(before);
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click(); // the toggle BITES here
+    expect(sessions.length).toBe(2);
+    const after = refScore(root);
+    expect(after).not.toBe(before); // the objective really changed the reference's total
+    expect(after).toBe(refTotal(config.seeds.data, { ...config, carriers: { disabled: [LEN] } }));
+    // its breakdown EXCLUDES the disabled id: select it and read the panel's census + rows
+    click(refCell(root));
+    expect(displayedTotal(root)).toBe(after);
+    expect(q<HTMLElement>(root, '.comphdr').textContent).toContain(
+      `${allCarriers(config).length - 1} distinct carriers`,
+    );
+    const names = [...root.querySelectorAll<HTMLElement>('.scorepanel .cname')];
+    expect(names.some((n) => n.textContent!.startsWith('length'))).toBe(false);
+    root.remove();
+  });
+
+  it('is NEVER the ★ best, even when its total beats every trajectory; selection stays sticky', () => {
+    const { root, sessions } = mount({ slots: 3 });
+    const s = sessions[0]!;
+    for (const t of s.allTrajectories()) s.forceTotal(t.id, -999); // reference now beats them all
+    step(root);
+    expect(refCell(root).classList.contains('best')).toBe(false);
+    expect(root.querySelectorAll('.refcell.best').length).toBe(0);
+    expect(bestId(root)).toBeDefined(); // the ★ stayed among the (worse) trajectories
+    // select the reference, keep stepping: no auto-switch away from it (sticky rules unchanged)
+    click(refCell(root));
+    step(root);
+    step(root);
+    expect(refCell(root).classList.contains('selected')).toBe(true);
+    expect(displayedTotal(root)).toBe(refTotal(config.seeds.data));
+    root.remove();
+  });
+
+  it('a NEW DATA SEED rebuilds it from the new dataset (deterministic seed edit)', () => {
+    const { root, sessions } = mount();
+    const el = q<HTMLInputElement>(root, '[data-a="dataseed"]');
+    el.value = '2';
+    el.dispatchEvent(new Event('change'));
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.dataSeed).toBe(2);
+    expect(refScore(root)).toBe(refTotal(2)); // golden bars OF THE NEW DATA, rescored
+    expect(refTotal(2)).not.toBe(refTotal(1)); // a real rebuild, not a stale repaint
+    root.remove();
+  });
+
+  it('a "reload" with a stored disabled reading scores the INITIAL reference under it', () => {
+    // ADVERSARIAL: prefs precedence (localStorage > config default) must reach the reference on
+    // the very FIRST session of a fresh startApp — not only after a toggle + Reset.
+    localStorage.setItem(
+      'diagram-evolver:prefs:disabledCarriers',
+      JSON.stringify([LEN]),
+    );
+    const { root, sessions } = mount();
+    expect(sessions[0]!.cfg.carriers.disabled).toEqual([LEN]); // the composed session cfg…
+    const want = refTotal(config.seeds.data, { ...config, carriers: { disabled: [LEN] } });
+    expect(refScore(root)).toBe(want); // …is the cfg the reference was scored under
+    expect(want).not.toBe(refTotal(config.seeds.data)); // and it genuinely differs from all-on
+    // its breakdown census shrank by exactly the one disabled reading
+    click(refCell(root));
+    expect(q<HTMLElement>(root, '.comphdr').textContent).toContain(
+      `${allCarriers(config).length - 1} distinct carriers`,
+    );
+    root.remove();
+  });
+
+  it('Reset while the reference is selected returns selection to the first trajectory', () => {
+    const { root, sessions } = mount({ slots: 2, plateauAt: [1, 1] });
+    step(root); // done → Save armed
+    click(refCell(root));
+    const save = q<HTMLButtonElement>(root, '[data-a="save"]');
+    expect(save.disabled).toBe(true); // reference selected: Save off, tooltip on
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    // default selection is the NEW session's first trajectory — never the reference
+    expect(refCell(root).classList.contains('selected')).toBe(false);
+    expect(selectedId(root)).toBe(String(sessions[1]!.trajectories()[0]!.id));
+    expect(save.title).toBe(''); // the reference tooltip does not linger
+    step(root); // the fresh session plateaus → done → Save re-arms for the real selection
+    expect(save.disabled).toBe(false);
+    root.remove();
+  });
+
+  it('config.ui.showReferenceBars = false simply removes the cell (gallery unaffected)', () => {
+    const prev = config.ui.showReferenceBars;
+    config.ui.showReferenceBars = false;
+    try {
+      const { root } = mount({ slots: 3 });
+      expect(root.querySelector('.refcell')).toBeNull();
+      expect(cells(root).map((c) => c.dataset.id)).toEqual(['0', '1', '2']);
+      expect(selectedId(root)).toBe('0');
+      root.remove();
+    } finally {
+      config.ui.showReferenceBars = prev;
+    }
   });
 });

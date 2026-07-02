@@ -257,6 +257,15 @@ export const config = {
 
   // ── GUI / render loop ─────────────────────────────────────────────────────
   stepsPerFrame: 4, // inner optimizer steps per animation frame (comprehensive score is ~10× heavier)
+
+  // ── GUI display knobs ─────────────────────────────────────────────────────
+  ui: {
+    // The gallery's permanent REFERENCE cell: a hand-built golden bar chart of the session's
+    // dataset (core/fixtures.loudGoldenBarChart), scored under the session's snapshotted objective
+    // so it can be compared against the evolved trajectories on any run. Display-only benchmark —
+    // never steps, never Saved, never the ★ best. Set false to hide the cell entirely.
+    showReferenceBars: true,
+  },
 };
 // NOTE: no `as const` — fields keep plain number/string types so the user (and tests / the optimizer)
 // can override weights, penalty weights, and hyperparameters by spreading a modified copy.

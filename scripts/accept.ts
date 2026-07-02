@@ -33,6 +33,7 @@ import { varianceN } from '../src/core/statsN';
 import {
   wellSeparatedData,
   goldenBarChart,
+  loudGoldenBarChart,
   auditDegenerates,
   valueScale,
 } from '../src/core/fixtures';
@@ -76,7 +77,8 @@ const check = (gate: string, name: string, pass: boolean, detail: string): void 
 // LOUD golden fixtures (2026-07-02, confirmed finding): spacing 100 puts the x-position ORDER
 // carriers far above the reader-resolution θ_len (salience ≈ 1.0, like every session endpoint's
 // carriers) instead of the 0.92-salient spacing-10 layout — gate comparisons are like-for-like.
-const golden = (d: DataSet): Figure => goldenBarChart(d, { k: valueScale(d), spacing: 100, x0: 5 });
+// The GUI's reference cell uses the same layout (core/fixtures.loudGoldenBarChart).
+const golden = loudGoldenBarChart;
 const mirrored = (d: DataSet): Figure =>
   goldenBarChart(d, { k: -valueScale(d), spacing: 100, x0: 5 });
 const rel = (b: Breakdown, key: 'sales' | 'order'): RelationBreakdown =>
