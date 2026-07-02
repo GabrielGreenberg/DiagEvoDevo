@@ -162,8 +162,7 @@ export function scoreValue(
 
 // ── exact path (display) ──────────────────────────────────────────────────────────
 
-/** One carrier's row in a relation's breakdown (v2). `reward`/`measurements` names are kept so v1
- *  consumers (bench, panel) read q in the old units: reward = q·maxRung, frac = reward/maxRung = q. */
+/** One carrier's row in a relation's breakdown (v2). */
 export interface CarrierScore {
   id: string;
   label: string;
@@ -171,23 +170,15 @@ export interface CarrierScore {
   aliases: readonly string[];
   salience: number; // ∈ [0,1): the reader-resolution gate
   q: number; // salience-gated, rung-normalized cell ∈ [0,1]
-  reward: number; // q · maxRung (v1-compatible units for panel/bench normalization)
   signedTau: number; // 2·fOrdExact − 1 ∈ [−1,1]: direction display (↑/↓) for this relation's data
   rungs: { name: RungName; f: number }[];
 }
-
-/** @deprecated v1 name — the cells are per distinct CARRIER now. */
-export type MeasurementScore = CarrierScore;
 
 export interface RelationBreakdown {
   key: 'sales' | 'order';
   dataType: ScaleType;
   aggregated: number; // the LSE ∈ [0,1] — this relation's contribution to the reward
-  normalized: number; // = aggregated (v1 name kept for consumers)
-  reward: number; // Σ_m q_m·maxRung (raw cell sum, v1-compatible display units)
-  maxReward: number; // #carriers × maxRung (the v1 normalization ceiling for per-cell fracs)
   carriers: CarrierScore[]; // sorted by q, best first
-  measurements: CarrierScore[]; // = carriers (deprecated v1 alias, same array)
 }
 
 export interface Breakdown {
@@ -238,14 +229,12 @@ export function scoreExact(
     const maxRung = maxRewardFor(rel.type, cfg) || 1;
     const rows: CarrierScore[] = [];
     const qs: number[] = [];
-    let rawSum = 0;
     for (const car of cands) {
       const cell = cells.get(car.id)!;
       const re = rewardExact(cell.c, rel.datavec, rel.type, cfg, car.unitClass);
       const q = cell.salience * (re.total / maxRung);
       cell.q.set(rel.key, q);
       qs.push(q);
-      rawSum += q * maxRung;
       rows.push({
         id: car.id,
         label: car.label,
@@ -253,7 +242,6 @@ export function scoreExact(
         aliases: car.aliases,
         salience: cell.salience,
         q,
-        reward: q * maxRung,
         signedTau: 2 * fOrdExact(cell.c, rel.datavec) - 1,
         rungs: re.rungs,
       });
@@ -264,11 +252,7 @@ export function scoreExact(
       key: rel.key,
       dataType: rel.type,
       aggregated,
-      normalized: aggregated,
-      reward: rawSum,
-      maxReward: cands.length * maxRung || 1,
       carriers: rows,
-      measurements: rows,
     });
     reward += aggregated;
   }

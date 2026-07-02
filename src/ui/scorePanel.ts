@@ -1,75 +1,100 @@
 // src/ui/scorePanel.ts
 //
-// The live score readout for the COMPREHENSIVE matrix (ARCHITECTURE.md GUI spec). Each data relation is
-// compared to every commensurable measurement, like-with-like; the panel shows, per relation, the summed
-// reward and the TOP measurements by fidelity — so the user watches which geometric relations come to
-// track the data (the emergent structure). F_ord within a measurement is the exact (Kendall τ) form.
+// The live score readout for the v2 objective (scoring-v2 design §UI v2). Per data relation: the
+// LSE-aggregated relation score, and per DISTINCT carrier a row with its plain-English label, a
+// salience chip (dim below the legibility gate), per-rung mini-bars (τ signed ↑/↓, r², ratio), and
+// the salience-gated cell q. Headline quality is honest (≈0 for random figures — chance floors are
+// removed at the source). The data-ink penalty (and any other registered penalty with weight > 0)
+// gets its own row. Reads ONLY the v2 Breakdown fields — no deprecated v1 aliases.
 
-import type { Breakdown, MeasurementScore } from '../core/score';
+import type { Breakdown, CarrierScore } from '../core/score';
+import type { RungExact } from '../core/fidelity/rungs';
 
 export interface ScorePanelData {
   breakdown: Breakdown;
   steps: number;
-  temperature: number;
-  mode: string;
+  /** Composed live status line, e.g. "running · 1 plateaued · 2 capped" or "converged". */
+  status: string;
 }
 
-const TOP_K = 6;
-const MATCH = 0.9; // a measurement "tracks" the data when its normalized fidelity ≥ this
+// Display thresholds (spec §UI v2; presentation only — the score itself is untouched by these).
+const TOP_K = 6; // carriers shown per relation (of the full distinct set)
+const MATCH = 0.9; // a carrier "tracks" a relation when its cell q ≥ this
+const DIM_SALIENCE = 0.5; // rows below this salience render dimmed (sub-legible carriers)
 
-/** Compact human label for a measurement id, e.g. 'page.displacement.magnitude' → 'disp mag'. */
-function shortId(id: string): string {
-  return id
-    .replace('page.', '')
-    .replace('frame.', 'f·')
-    .replace('displacement', 'disp')
-    .replace('midpoint', 'mid')
-    .replace('projPar', '∥')
-    .replace('projPerp', '⊥')
-    .replace('magnitude', 'mag')
-    .replace('angle', '∠')
-    .replace(/\./g, ' ');
+const esc = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** One rung's mini-bar. Ordinal shows the SIGNED τ direction (↑ with, ↓ against the data). */
+function rungBar(r: RungExact, signedTau: number): string {
+  const f = Math.max(0, Math.min(1, r.f));
+  const txt =
+    r.name === 'ord'
+      ? `τ${signedTau >= 0 ? '↑' : '↓'}${Math.abs(signedTau).toFixed(2)}`
+      : r.name === 'int'
+        ? `r²${r.f.toFixed(2)}`
+        : `∝${r.f.toFixed(2)}`;
+  return `<span class="minibar" title="${r.name} rung fidelity">
+    <span class="minifill rung-${r.name}" style="width:${(100 * f).toFixed(1)}%"></span>
+    <span class="minitxt">${txt}</span>
+  </span>`;
 }
 
-function measRow(m: MeasurementScore, maxRung: number): string {
-  const frac = maxRung > 0 ? m.reward / maxRung : 0; // normalized fidelity ∈ [0,1]
-  const cls = m.stamp === 'cyclic' ? 'rung-int' : 'rung-ratio';
-  return `<div class="rrow">
-    <span class="rname" title="${m.id}">${shortId(m.id)}</span>
-    <span class="rtrack"><span class="rbar ${cls}" style="width:${(100 * frac).toFixed(1)}%"></span></span>
-    <span class="rval">${frac.toFixed(2)}</span>
+function carrierRow(m: CarrierScore): string {
+  const dim = m.salience < DIM_SALIENCE ? ' dim' : '';
+  const badge =
+    m.aliases.length > 0
+      ? `<span class="cbadge" title="reads the same under the page and the posited frame (merged duplicate cells)">page+frame</span>`
+      : '';
+  return `<div class="crow${dim}">
+    <span class="cname">${esc(m.label)}${badge}</span>
+    <span class="salchip" title="salience — the reader-resolution gate">${m.salience.toFixed(2)}</span>
+    <span class="rungbars">${m.rungs.map((r) => rungBar(r, m.signedTau)).join('')}</span>
+    <span class="cq" title="salience-gated cell q">${m.q.toFixed(2)}</span>
   </div>`;
 }
 
 export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
   const b = d.breakdown;
-  let matching = 0;
-  let totalMeas = 0;
+
+  // "N tracking" = DISTINCT carriers with q ≥ MATCH in at least one relation.
+  const trackingIds = new Set<string>();
+  for (const rel of b.relations)
+    for (const m of rel.carriers) if (m.q >= MATCH) trackingIds.add(m.id);
 
   const sections = b.relations
     .map((rel) => {
-      const maxRung = rel.measurements.length ? rel.maxReward / rel.measurements.length : 1;
-      totalMeas += rel.measurements.length;
-      matching += rel.measurements.filter((m) => m.reward / maxRung >= MATCH).length;
-      const top = rel.measurements.slice(0, TOP_K).map((m) => measRow(m, maxRung)).join('');
-      const nMatch = rel.measurements.filter((m) => m.reward / maxRung >= MATCH).length;
+      const nMatch = rel.carriers.filter((m) => m.q >= MATCH).length;
+      const rows = rel.carriers.slice(0, TOP_K).map(carrierRow).join('');
       return `<div class="assign">
         <div class="ahead"><b>${rel.key}</b> (${rel.dataType})
-          <span class="muted">${rel.measurements.length} commensurable</span>
-          <span class="areward">${(100 * rel.normalized).toFixed(0)}% · ${rel.reward.toFixed(1)}/${rel.maxReward.toFixed(0)}</span></div>
-        <div class="matchline muted">${nMatch} tracking (fidelity ≥ ${MATCH})</div>
-        ${top}
+          <span class="muted">${rel.carriers.length} commensurable</span>
+          <span class="areward" title="LSE-aggregated relation score">${(100 * rel.aggregated).toFixed(0)}%</span></div>
+        <div class="matchline muted">${nMatch} tracking (q ≥ ${MATCH}) · top ${Math.min(TOP_K, rel.carriers.length)} shown</div>
+        ${rows}
       </div>`;
     })
     .join('');
 
-  root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩ — full matrix</span></h3>
+  const penaltyRows = b.penalties
+    .filter((p) => p.weight > 0)
+    .map(
+      (p) =>
+        `<div class="penrow"><span class="pname">${p.name === 'spuriousness' ? 'data-ink penalty' : p.name}</span>
+         <span class="muted">w ${p.weight}</span>
+         <span class="pval">−${p.weighted.toFixed(3)}</span></div>`,
+    )
+    .join('');
+
+  root.innerHTML = `<h3>Score <span class="muted">homomorphism of ⟨order × value⟩ — per-relation smooth-max (LSE)</span></h3>
     <div class="scoretop">
       <div class="bignum"><span class="biglabel">quality</span><span class="bigval">${(100 * b.quality).toFixed(0)}%</span></div>
-      <div class="bignum"><span class="biglabel">tracking</span><span class="bigval">${matching}/${totalMeas}</span></div>
+      <div class="bignum"><span class="biglabel">tracking</span><span class="bigval">${trackingIds.size}/${b.distinctCarriers}</span></div>
+      <div class="bignum"><span class="biglabel">total</span><span class="bigval">${b.total.toFixed(3)}</span></div>
     </div>
-    <div class="qualtrack"><span class="qualbar" style="width:${(100 * b.quality).toFixed(1)}%"></span></div>
-    <div class="comphdr muted">each data relation vs ALL commensurable measurements, summed (top ${TOP_K} shown):</div>
+    <div class="qualtrack"><span class="qualbar" style="width:${(100 * Math.max(0, Math.min(1, b.quality))).toFixed(1)}%"></span></div>
+    <div class="comphdr muted">${b.distinctCarriers} distinct carriers (census ${b.censusSize}); dim rows are below reader resolution</div>
     ${sections}
-    <div class="statusrow muted">step ${d.steps} · T ${d.temperature.toFixed(2)} · ${d.mode}</div>`;
+    ${penaltyRows}
+    <div class="statusrow muted">step ${d.steps} · ${esc(d.status)}</div>`;
 }

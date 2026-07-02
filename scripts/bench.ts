@@ -1,8 +1,8 @@
 // scripts/bench.ts
 //
 // Headless convergence + steps/sec report for the COMPREHENSIVE matrix score (Principle II). For each
-// seed: reward, per-relation best-measurement fidelity + how many measurements track the data, steps,
-// throughput. "Converged" = the best measurement in EACH relation tracks the data (fidelity ≥ 0.9).
+// seed: reward, per-relation best-carrier cell q + how many distinct carriers track the data, steps,
+// throughput. "Converged" = the best carrier in EACH relation tracks the data (q ≥ 0.9).
 //
 // Run: npm run bench   [or]   npx vite-node scripts/bench.ts
 
@@ -14,14 +14,10 @@ const N_SEEDS = 24;
 const DATA_SEED = 1;
 const MATCH = 0.9;
 
-const bestFrac = (rel: RelationBreakdown): number => {
-  const maxRung = rel.measurements.length ? rel.maxReward / rel.measurements.length : 1;
-  return (rel.measurements[0]?.reward ?? 0) / maxRung;
-};
-const nTracking = (rel: RelationBreakdown): number => {
-  const maxRung = rel.measurements.length ? rel.maxReward / rel.measurements.length : 1;
-  return rel.measurements.filter((m) => m.reward / maxRung >= MATCH).length;
-};
+// v2 rows carry the salience-gated, rung-normalized cell q directly (sorted best first).
+const bestFrac = (rel: RelationBreakdown): number => rel.carriers[0]?.q ?? 0;
+const nTracking = (rel: RelationBreakdown): number =>
+  rel.carriers.filter((m) => m.q >= MATCH).length;
 
 interface Row {
   seed: number;
@@ -37,6 +33,8 @@ interface Row {
 
 const rows: Row[] = [];
 let totalScoreEvals = 0;
+let salesN = 0; // distinct carriers commensurable with each relation (from the breakdown itself)
+let orderN = 0;
 const t0 = performance.now();
 
 for (let s = 1; s <= N_SEEDS; s++) {
@@ -46,6 +44,8 @@ for (let s = 1; s <= N_SEEDS; s++) {
   totalScoreEvals += r.steps * config.evolve.populationSize;
   const sales = r.score.relations.find((a) => a.key === 'sales')!;
   const order = r.score.relations.find((a) => a.key === 'order')!;
+  salesN = sales.carriers.length;
+  orderN = order.carriers.length;
   const salesBest = bestFrac(sales);
   const orderBest = bestFrac(order);
   rows.push({
@@ -78,5 +78,5 @@ for (const r of rows) {
 console.log('---');
 console.log(`best-carrier convergence (sales & order best ≥ ${MATCH}): ${okCount}/${N_SEEDS} (${((100 * okCount) / N_SEEDS).toFixed(0)}%)`);
 console.log(`mean reward: ${mean(rows.map((r) => r.reward)).toFixed(1)}   mean steps: ${mean(rows.map((r) => r.steps)).toFixed(0)}   hit maxSteps: ${byCap}/${N_SEEDS}`);
-console.log(`mean measurements tracking: sales ${mean(rows.map((r) => r.salesTrack)).toFixed(1)}/20 · order ${mean(rows.map((r) => r.orderTrack)).toFixed(1)}/26`);
+console.log(`mean carriers tracking (q ≥ ${MATCH}): sales ${mean(rows.map((r) => r.salesTrack)).toFixed(1)}/${salesN} · order ${mean(rows.map((r) => r.orderTrack)).toFixed(1)}/${orderN}`);
 console.log(`wall: ${wall.toFixed(2)}s   score-evals: ${totalScoreEvals}   throughput: ${(totalScoreEvals / wall).toFixed(0)} score-evals/s\n`);

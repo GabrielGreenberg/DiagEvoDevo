@@ -1,30 +1,31 @@
-// src/optim/evolve.test.ts — M6 gate for the evolution / restart layer.
+// src/optim/evolve.test.ts — v2 gate for the multi-start outer layer: trajectory start points and
+// the deterministic fresh/mutant replacement schedule (no generations, no culling — those died with
+// optimizer v2; the session tests cover the replacement lifecycle end to end).
 
 import { describe, it, expect } from 'vitest';
 import {
-  initPopulation,
-  evolveStep,
-  mutateFigure,
+  initialFigures,
   randomFigure,
-  bestMember,
+  mutateFigure,
   populationRng,
+  isMutantRestart,
 } from './evolve';
+import { seedToFigure } from '../core/figure';
 import { mulberry32 } from '../core/rng';
 import { config, N_PARAMS } from '../config';
-import type { Figure } from '../core/figure';
 
-describe('evolve: reproducibility', () => {
-  it('initPopulation is deterministic from the figure seed', () => {
-    const a = initPopulation(7).pop;
-    const b = initPopulation(7).pop;
-    expect(a.members.length).toBe(config.evolve.populationSize);
-    for (let k = 0; k < a.members.length; k++) {
-      expect(Array.from(a.members[k]!.figure)).toEqual(Array.from(b.members[k]!.figure));
+describe('evolve: reproducibility of trajectory start points', () => {
+  it('initialFigures is deterministic from the figure seed and puts the seeded figure in slot 0', () => {
+    const a = initialFigures(7, config.evolve.populationSize, populationRng(7));
+    const b = initialFigures(7, config.evolve.populationSize, populationRng(7));
+    expect(a.length).toBe(config.evolve.populationSize);
+    expect(Array.from(a[0]!)).toEqual(Array.from(seedToFigure(7))); // the displayed seed IS in the search
+    for (let k = 0; k < a.length; k++) {
+      expect(Array.from(a[k]!)).toEqual(Array.from(b[k]!));
     }
-    // different seed → different population
-    expect(Array.from(initPopulation(8).pop.members[1]!.figure)).not.toEqual(
-      Array.from(a.members[1]!.figure),
-    );
+    // different seed → different random slots
+    const c = initialFigures(8, config.evolve.populationSize, populationRng(8));
+    expect(Array.from(c[1]!)).not.toEqual(Array.from(a[1]!));
   });
 
   it('randomFigure stays in the init box; mutateFigure perturbs deterministically', () => {
@@ -42,17 +43,25 @@ describe('evolve: reproducibility', () => {
   });
 });
 
-describe('evolve: a generation keeps the best and replaces the worst', () => {
-  it('best score is non-decreasing across a generation (elitism on the top half)', () => {
-    // score = −Σx² : the "best" figure is the one closest to the origin
-    const evalScore = (f: Figure): number => -f.reduce((s, x) => s + x * x, 0);
-    const { pop } = initPopulation(5);
-    const rng = populationRng(5);
-    for (const m of pop.members) m.score = evalScore(m.figure);
-    const before = bestMember(pop).score;
-    evolveStep(pop, evalScore, rng);
-    const after = bestMember(pop).score;
-    expect(after).toBeGreaterThanOrEqual(before); // top half preserved, so best cannot get worse
-    expect(pop.generation).toBe(1);
+describe('evolve: the fresh/mutant replacement schedule', () => {
+  const kinds = (n: number, frac: number): boolean[] =>
+    Array.from({ length: n }, (_, i) => isMutantRestart(i, frac));
+
+  it('fraction 0.5 alternates fresh, mutant, fresh, … (both kinds occur at any budget ≥ 2)', () => {
+    expect(kinds(6, 0.5)).toEqual([false, true, false, true, false, true]);
+  });
+
+  it('fraction 0 → all fresh; fraction 1 → all mutants', () => {
+    expect(kinds(8, 0)).toEqual(new Array(8).fill(false));
+    expect(kinds(8, 1)).toEqual(new Array(8).fill(true));
+  });
+
+  it('any fraction: exactly ⌊n·frac⌋ mutants in the first n replacements (quota is exact)', () => {
+    for (const frac of [0.25, 1 / 3, 0.5, 0.7]) {
+      for (const n of [1, 3, 8, 20]) {
+        const mutants = kinds(n, frac).filter(Boolean).length;
+        expect(mutants, `frac=${frac} n=${n}`).toBe(Math.floor(n * frac));
+      }
+    }
   });
 });

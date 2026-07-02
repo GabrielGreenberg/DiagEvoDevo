@@ -1,27 +1,17 @@
 // src/optim/evolve.ts
 //
-// The outer search layer (CONCEPT.md §9): random restarts + mutation for the global structure the
-// smooth gradient cannot supply — above all, getting the ORDERING right (the ordinal surrogate is flat
-// inside a correct ordering, so Adam alone stalls at wrong orderings). A population of parallel Adam
-// trajectories; each generation culls the worst members and replaces them with fresh random restarts or
-// mutations of the current best. All randomness flows through the seeded Rng for reproducibility.
+// The outer multi-start layer (CONCEPT.md §9; optimizer v2 "let each evolution play out"). v2 has
+// NO generations, NO culling, NO champion adoption: the session runs populationSize independent
+// trajectories and, when one plays out (plateau or cap), freezes it as an endpoint and starts a
+// replacement in the freed slot. This module supplies the trajectory START POINTS — the seeded
+// initial slots, fresh random restarts, mutations of the best endpoint — and the deterministic
+// fresh/mutant replacement schedule. All randomness flows through the seeded Rng (src/core/rng.ts)
+// for reproducibility.
 
 import { config, type Config, N_PARAMS } from '../config';
 import type { Figure } from '../core/figure';
 import { seedToFigure, cloneFigure } from '../core/figure';
 import { mulberry32, uniform, gaussian, type Rng } from '../core/rng';
-import { initAdam, type AdamState } from './gd';
-
-export interface Member {
-  figure: Figure;
-  adam: AdamState;
-  score: number;
-}
-
-export interface Population {
-  members: Member[];
-  generation: number;
-}
 
 /** A fresh random figure (uniform in the init box) drawn from an Rng. */
 export function randomFigure(rng: Rng, cfg: Config = config): Figure {
@@ -37,80 +27,32 @@ export function mutateFigure(figure: Figure, sigma: number, rng: Rng): Figure {
   return f;
 }
 
-/** Deterministic Rng for a population (decorrelated from the figure seed's own stream). */
+/** Deterministic Rng for a session's outer search (decorrelated from the figure seed's own stream). */
 export function populationRng(figureSeed: number): Rng {
   return mulberry32((figureSeed ^ 0x5bd1e995) >>> 0);
 }
 
 /**
- * Initial population: member 0 is the figure seed's canonical figure (so the displayed seed is in the
- * search); the rest are fresh random restarts.
+ * Initial trajectory start points: slot 0 is the figure seed's canonical figure (so the displayed
+ * seed is in the search); the rest are fresh random restarts drawn from the session Rng.
  */
-export function initPopulation(
+export function initialFigures(
   figureSeed: number,
-  size: number = config.evolve.populationSize,
-  cfg: Config = config,
-): { pop: Population; rng: Rng } {
-  const rng = populationRng(figureSeed);
-  const members: Member[] = [];
-  members.push({ figure: seedToFigure(figureSeed, cfg), adam: initAdam(), score: -Infinity });
-  for (let k = 1; k < size; k++) {
-    members.push({ figure: randomFigure(rng, cfg), adam: initAdam(), score: -Infinity });
-  }
-  return { pop: { members, generation: 0 }, rng };
-}
-
-const finite = (x: number): number => (Number.isFinite(x) ? x : -Infinity);
-
-/**
- * One outer generation. Member 0 is the PROTECTED champion (the displayed trajectory) and is never
- * culled; among the EXPLORERS (members 1..N−1) we keep the top half and replace the bottom half with a
- * mix of fresh random restarts and mutations of top explorers (Adam state reset for replacements).
- * With populationSize 1 there are no explorers and this is a no-op — a pure single trajectory.
- */
-export function evolveStep(
-  pop: Population,
-  evalScore: (f: Figure) => number,
+  size: number,
   rng: Rng,
   cfg: Config = config,
-): Population {
-  for (const m of pop.members) m.score = finite(evalScore(m.figure));
-  const champion = pop.members[0]!;
-  const explorers = pop.members.slice(1);
-  explorers.sort((a, b) => b.score - a.score);
-  const size = explorers.length;
-  const keep = Math.max(1, Math.ceil(size / 2));
-  const sigmaAbs = cfg.evolve.mutationSigma * (cfg.figureInit.max - cfg.figureInit.min);
-  for (let k = keep; k < size; k++) {
-    if ((k - keep) % 2 === 0) {
-      explorers[k] = { figure: randomFigure(rng, cfg), adam: initAdam(), score: -Infinity };
-    } else {
-      const parent = explorers[(k - keep) % keep]!;
-      explorers[k] = {
-        figure: mutateFigure(parent.figure, sigmaAbs, rng),
-        adam: initAdam(),
-        score: -Infinity,
-      };
-    }
-  }
-  pop.members = [champion, ...explorers];
-  pop.generation += 1;
-  return pop;
+): Figure[] {
+  const figs: Figure[] = [seedToFigure(figureSeed, cfg)];
+  for (let k = 1; k < size; k++) figs.push(randomFigure(rng, cfg));
+  return figs;
 }
 
-/** The best (highest-scoring) member overall. */
-export function bestMember(pop: Population): Member {
-  let best = pop.members[0]!;
-  for (const m of pop.members) if (finite(m.score) > finite(best.score)) best = m;
-  return best;
-}
-
-/** The best EXPLORER (members 1..N−1), or null if there are none. */
-export function bestExplorer(pop: Population): Member | null {
-  let best: Member | null = null;
-  for (let k = 1; k < pop.members.length; k++) {
-    const m = pop.members[k]!;
-    if (!best || finite(m.score) > finite(best.score)) best = m;
-  }
-  return best;
+/**
+ * Deterministic replacement schedule: replacement index i (0-based) is a MUTANT of the best
+ * endpoint exactly when the running mutant count falls behind the `mutateFraction` quota —
+ * ⌊(i+1)·frac⌋ > ⌊i·frac⌋, i.e. the first ⌊n·frac⌋ mutants are spread evenly through n restarts.
+ * frac 0.5 alternates fresh, mutant, fresh, mutant, …; frac 0 = all fresh; frac 1 = all mutants.
+ */
+export function isMutantRestart(i: number, mutateFraction: number): boolean {
+  return Math.floor((i + 1) * mutateFraction) > Math.floor(i * mutateFraction);
 }

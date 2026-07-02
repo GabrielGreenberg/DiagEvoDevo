@@ -135,32 +135,32 @@ export const config = {
     eps: 1e-8,
   },
 
-  // ── Evolution / random-restart outer layer (CONCEPT §9) ──────────────────
-  // NOTE (scoring-v2 design): the optimizer-v2 pass replaces champion adoption with independent
-  // played-out trajectories; `adoptMargin` is DEPRECATED and kept only until src/optim is rebuilt.
-  // These knobs are owned by the optimizer pass — the scoring pass leaves them untouched.
+  // ── Evolution / multi-start outer layer (CONCEPT §9; optimizer v2) ────────
+  // v2 ("let each evolution play out"): populationSize INDEPENDENT trajectories — no champion
+  // adoption, no mid-run culling. Each trajectory runs its own Adam state, its own anneal clock,
+  // and its own plateau detector; when it plateaus (or hits the live per-trajectory step cap) it
+  // FREEZES as an endpoint and its slot starts a replacement trajectory, until the restart budget
+  // is spent. The session result is the best endpoint by exact score.
   evolve: {
-    populationSize: 4, // 1 displayed champion + (N−1) exploring members (comprehensive score is heavy)
-    mutationSigma: 0.2, // gaussian perturbation scale for restart/mutation
-    restartOnStall: true,
-    maxRestarts: 20,
-    outerEvery: 25, // run an evolve generation every N inner Adam steps
-    // The DISPLAYED figure is a protected champion (member 0) running a smooth gradient trajectory.
-    // It only "adopts" an exploring member's figure — a visible jump — when that explorer beats it by
-    // this score margin. Prevents the display from flickering between near-tied members (the "resets"),
-    // while still letting a genuine breakthrough rescue a stuck champion.
-    adoptMargin: 0.05,
+    populationSize: 4, // parallel independent trajectory slots (comprehensive score is heavy)
+    mutationSigma: 0.2, // mutation-restart perturbation scale, as a fraction of the init-box width
+    // Fraction of replacement trajectories seeded by MUTATING the best endpoint so far (exploit);
+    // the rest are fresh random restarts (explore). Interleaved deterministically (0.5 alternates
+    // fresh, mutant, fresh, …), so both kinds occur at any budget ≥ 2.
+    mutateFraction: 0.5,
+    maxRestarts: 20, // the restart budget: total replacement trajectories per session
   },
 
   // ── Convergence detection: SCORE plateau, not param fixity (CONCEPT §9) ───
   // The optimum is a valley (scale/translation invariant) so params drift forever;
-  // we watch the score window's spread instead.
+  // we watch the score window's spread instead. v2: detection is PER TRAJECTORY.
   converge: {
     windowSize: 80, // v2: longer window — the LSE objective's plateaus are slower/noisier than v1's sums
     plateauEps: 1e-4, // absolute: max(window) − min(window) below this ⇒ plateau (near-zero scores)
     plateauRelEps: 3e-4, // relative: spread / |mean| below this ⇒ plateau (adapts to the score scale)
     minSteps: 100, // never declare convergence before this
-    maxSteps: 5000, // hard cap per run
+    maxSteps: 5000, // per-TRAJECTORY hard step cap; initial value of the live GUI control (session.setMaxSteps)
+    maxTotalSteps: 200000, // GLOBAL session cap on step() calls — a safety net that force-finishes everything
     qualityThreshold: 0.9, // normalized score to count a converged run as "success" (bench)
   },
 

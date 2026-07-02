@@ -10,6 +10,20 @@ the same session that work happens. Never reconstruct state that belongs here.
 CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
 (`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
+### Acceptance run (2026-07-02): 49/49 checks green, division of labor 6/6
+Full `npm run accept` (default knobs, no tuning needed): golden bars 1.506 vs every audit-winning
+degenerate 0.75–0.84, random ×50 median NEGATIVE, label-ordered > value-sorted, characterizer
+calibrated (legible fixtures legible, 0/50 randoms legible). Gate-5 sessions (multi-start optimizer,
+seeds 1–6 × data 1, ~6.5 min/seed): **6/6 division of labor** (every seed: some salient carrier
+τ_sym = 1.00 for order AND some salient carrier ratio ≈ 1.00 for sales), 5/6 characterized LEGIBLE,
+quality 0.84–0.85, ink 0.06–0.08. **Distinct diagram KINDS emerged as optima** (nothing hard-coded):
+seed 1/3/5 a "spoke/comet" plot (order = start-distance-from-frame-origin, value = end-distance);
+seed 2 horizontal ticks (order = end-x, value = end-y); seed 4 grounded near-vertical bars
+(order = rise, value = start-distance). Several beat the golden bar chart (0.796) — the mission's
+"discover kinds as optima" behavior. Live GUI verified same-day: honest headline (random figure
+total ≈ −0.02), trajectory strip with independent played-out runs (no resets), fixed viewport
+(frame no longer appears to move), plain-English labels, per-rung mini-bars, live max-steps control.
+
 ### The audit (2026-07-01)
 An 87-agent adversarial audit (every finding confirmed by ≥2/3 independent verifiers with numeric
 reproductions; ~110 scripts preserved in `scratch/` — reuse as probes, never modify) proved the v1

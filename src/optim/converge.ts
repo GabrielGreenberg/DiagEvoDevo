@@ -8,6 +8,17 @@
 
 import { config } from '../config';
 
+/** The knobs the plateau detector reads. `maxSteps` is the PER-TRAJECTORY cap — the v2 session
+ *  passes its live-adjustable value here; the global session cap (maxTotalSteps) is session-level
+ *  and none of this module's business. */
+export interface PlateauConfig {
+  windowSize: number;
+  plateauEps: number;
+  plateauRelEps: number;
+  minSteps: number;
+  maxSteps: number;
+}
+
 export interface ConvergenceState {
   window: number[]; // ring buffer of the last windowSize scores
   step: number;
@@ -27,7 +38,7 @@ export function initConvergence(): ConvergenceState {
 export function pushScore(
   state: ConvergenceState,
   score: number,
-  cfg = config.converge,
+  cfg: PlateauConfig = config.converge,
 ): boolean {
   if (state.converged) return true;
   state.step += 1;

@@ -58,7 +58,17 @@ export function deserialize(s: SerializedResult): SessionResult {
 
 function storage(): Storage | null {
   try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
+    // Guard the full API surface: some DOM shims (e.g. jsdom without a URL origin) expose a
+    // `localStorage` object whose Storage methods are missing — treat that as "no storage".
+    if (
+      typeof localStorage !== 'undefined' &&
+      typeof localStorage.getItem === 'function' &&
+      typeof localStorage.setItem === 'function' &&
+      typeof localStorage.removeItem === 'function'
+    ) {
+      return localStorage;
+    }
+    return null;
   } catch {
     return null;
   }

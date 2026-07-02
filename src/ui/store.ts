@@ -1,19 +1,23 @@
 // src/ui/store.ts
 //
 // A ~20-line observable store — the "tiny store" ARCHITECTURE.md calls for (no framework). It holds
-// VIEW state (the current Session, editable seeds, run mode); the Session owns the heavy optimizer
-// state. Panels subscribe and re-render on notify; the rAF loop bumps `tick` each frame.
+// VIEW state (the current Session, editable seeds, run mode, the live maxSteps cap); the Session owns
+// the heavy optimizer state. Panels subscribe and re-render on notify; the rAF loop bumps `tick`.
 
-import type { Session, SessionResult } from '../optim/session';
+import type { SessionResult } from '../optim/session';
+import type { SessionApi } from './sessionApi';
 
-export type RunMode = 'idle' | 'running' | 'paused' | 'converged';
+export type RunMode = 'idle' | 'running' | 'paused' | 'done';
 
 export interface AppState {
-  session: Session;
+  session: SessionApi;
   figureSeed: number;
   dataSeed: number;
   mode: RunMode;
   tick: number; // frame counter; bumping it forces a re-render
+  /** The live per-trajectory step cap (session.setMaxSteps). UI state so it PERSISTS across
+   *  Reset / new-seed within this app instance (spec: maxSteps control). */
+  maxSteps: number;
   loaded: SessionResult | null; // a loaded saved result being reviewed (overrides the live figure)
   saveCount: number;
 }
