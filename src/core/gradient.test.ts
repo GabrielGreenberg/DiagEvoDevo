@@ -49,36 +49,28 @@ describe('gradient: points uphill (score is a reward we maximize)', () => {
   });
 });
 
-describe('gradient: scale invariance (CONCEPT §9)', () => {
-  // NOTE: under COMPREHENSIVE scoring the frame-anchored measurements are origin-relative, so horizontal
-  // translation is NO LONGER a symmetry (the posited frame anchors position). Overall SCALE about the
-  // frame origin remains a symmetry (fRatio scale-invariant, fInt affine-invariant, fOrd normalized).
-  it('EXACT reward is scale-k invariant; the differentiable ∇S ⟂ scale to machine precision', () => {
-    // The EXACT reward is truly scale-invariant for ANY figure (fRatio/fInt/fOrd all scale-invariant).
+describe('gradient: scale is NO LONGER a symmetry (v2 salience — audit defect 3)', () => {
+  // v1's score was fully scale-invariant, which is exactly how "perfect" sub-pixel encodings won
+  // (resolution-free fidelity). v2 breaks the symmetry ON PURPOSE: the salience gate and the
+  // legibility floor are absolute page-unit scales. Shrinking a figure below the reader's
+  // resolution must LOSE reward; growing a legible figure must (weakly) gain and then saturate.
+  it('shrinking a random figure far below θ collapses its reward; enlarging saturates', () => {
     const f = seedToFigure(60);
-    const scaled = cloneFigure(f);
-    for (let i = 0; i < N_PARAMS; i++) scaled[i] = f[i]! * 1.7;
-    expect(scoreExact(scaled, data).reward).toBeCloseTo(scoreExact(f, data).reward, 9);
-
-    // The DIFFERENTIABLE gradient is only APPROXIMATELY ⟂ scale: the ordinal surrogate depends on
-    // margins |cᵢ−cⱼ|/T, so scaling inflates margins. The residual shrinks as T→0 (surrogate → step).
-    const scaleRel = (T: number): number => {
-      const cfg = { ...config, T };
-      const { grad } = gradScore(f, data, cfg);
-      let dot = 0;
-      let gn = 0;
-      let xn = 0;
-      for (let i = 0; i < N_PARAMS; i++) {
-        dot += grad[i]! * f[i]!;
-        gn += grad[i]! * grad[i]!;
-        xn += f[i]! * f[i]!;
-      }
-      return Math.abs(dot) / (Math.sqrt(gn) * Math.sqrt(xn) + 1e-30);
+    const at = (k: number): number => {
+      const s = cloneFigure(f);
+      for (let i = 0; i < N_PARAMS; i++) s[i] = f[i]! * k;
+      return scoreExact(s, data).reward;
     };
-    // The spread-normalized ordinal surrogate is ITSELF scale-invariant, so ∇S ⟂ scale to machine
-    // precision at every temperature (the M5 residual that motivated normalization is now gone: ~1e-13).
-    expect(scaleRel(0.1)).toBeLessThan(1e-6);
-    expect(scaleRel(0.004)).toBeLessThan(1e-6);
+    const base = at(1);
+    expect(at(0.001)).toBeLessThan(0.5 * base); // sub-legible: only scale-free angle residue remains
+    expect(Math.abs(at(10) - at(5))).toBeLessThan(0.02); // saturation above the resolution
+  });
+  it('the scale direction carries a real (finite, non-NaN) gradient signal now', () => {
+    const f = seedToFigure(60);
+    const { grad } = gradScore(f, data);
+    let dot = 0;
+    for (let i = 0; i < N_PARAMS; i++) dot += grad[i]! * f[i]!;
+    expect(Number.isFinite(dot)).toBe(true);
   });
 });
 

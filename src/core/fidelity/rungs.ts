@@ -6,29 +6,47 @@
 //   • sales → ratio data  → 3 rungs (ordinal ⊂ interval ⊂ ratio), max w_ord + w_int + w_ratio
 //   • order → ordinal data → 1 rung (ordinal), max w_ord
 // The figure may over-provide structure harmlessly; the data can never grant a rung it lacks.
+//
+// v2: every rung form receives the CARRIER'S UNIT CLASS ('length' | 'angle') so unit-bearing
+// parameters (the ordinal legibility spread floor) are read from the right config knob — page
+// units for positions/lengths, radians for bearings.
 
 import { Value, val, add, mul } from '../autograd/engine';
 import { ScaleType, scaleLeq } from '../scale';
 import type { Config } from '../../config';
-import { fOrd, fInt, fRatio, fOrdExact, fIntExact, fRatioExact } from './ladder';
+import type { UnitClass } from '../measurements/types';
+import { tauSym, fInt, fRatio, tauSymExact, fIntExact, fRatioExact } from './ladder';
 
 export type RungName = 'ord' | 'int' | 'ratio';
+
+/** The legibility spread floor for a carrier's unit class (CONCEPT §6 v2). */
+export function spreadFloorFor(unit: UnitClass, cfg: Config): number {
+  return unit === 'angle' ? cfg.legibility.spreadFloorAngle : cfg.legibility.spreadFloorLen;
+}
+
+/** The salience resolution θ for a carrier's unit class (CONCEPT §6 v2 reader model). */
+export function thetaFor(unit: UnitClass, cfg: Config): number {
+  return unit === 'angle' ? cfg.salience.thetaAngle : cfg.salience.thetaLen;
+}
 
 export interface Rung {
   readonly name: RungName;
   /** The rung's own scale type (used for the height-cap comparison). */
   readonly scaleType: ScaleType;
   weight(cfg: Config): number;
-  fDiff(c: Value[], v: Value[], cfg: Config): Value;
-  fExact(c: ArrayLike<number>, v: ArrayLike<number>, cfg: Config): number;
+  fDiff(c: Value[], v: Value[], cfg: Config, unit: UnitClass): Value;
+  fExact(c: ArrayLike<number>, v: ArrayLike<number>, cfg: Config, unit: UnitClass): number;
 }
 
 export const ORD_RUNG: Rung = {
   name: 'ord',
   scaleType: ScaleType.Ordinal,
   weight: (cfg) => cfg.weights.w_ord,
-  fDiff: (c, v, cfg) => fOrd(c, v, cfg.T, cfg.eps.corrVar),
-  fExact: (c, v) => fOrdExact(c, v),
+  // v2: the rung fidelity is τ_sym (chance-corrected, direction-symmetric), floored at the
+  // carrier-unit legibility scale.
+  fDiff: (c, v, cfg, unit) =>
+    tauSym(c, v, cfg.T, spreadFloorFor(unit, cfg), cfg.eps.absSmooth, cfg.eps.corrVar),
+  fExact: (c, v) => tauSymExact(c, v),
 };
 
 export const INT_RUNG: Rung = {
@@ -43,8 +61,12 @@ export const RATIO_RUNG: Rung = {
   name: 'ratio',
   scaleType: ScaleType.Ratio,
   weight: (cfg) => cfg.weights.w_ratio,
-  fDiff: (c, v, cfg) => fRatio(c, v, cfg.sigma0Sq, cfg.eps.ratioPos),
-  fExact: (c, v, cfg) => fRatioExact(c, v, cfg.sigma0Sq, cfg.eps.ratioPos),
+  // v2.1 signed-safe form: magnitude ∝ value AND coherent sign, per-entry v-implied normalization
+  // (F_ratio = 1 exactly at c = ±k·v; no positivity clamp).
+  fDiff: (c, v, cfg) =>
+    fRatio(c, v, cfg.sigma0Sq, cfg.ratioSign.kappa, cfg.eps.length, cfg.eps.sigDenom, cfg.eps.absSmooth),
+  fExact: (c, v, cfg) =>
+    fRatioExact(c, v, cfg.sigma0Sq, cfg.ratioSign.kappa, cfg.eps.length, cfg.eps.sigDenom),
 };
 
 /** The registry, in ascending strictness. */
@@ -72,19 +94,21 @@ export interface RewardValue {
 
 /**
  * Differentiable reward for one assigned relation: the carrier's 12-vector c (Value[]) against the
- * data vector v (Value[] of constants), height-capped by dataType.
+ * data vector v (Value[] of constants), height-capped by dataType, unit-parameterized by the
+ * carrier's unit class.
  */
 export function rewardValue(
   c: Value[],
   v: Value[],
   dataType: ScaleType,
   cfg: Config,
+  unit: UnitClass,
 ): RewardValue {
   const rs = rungsForData(dataType);
   let total: Value = val(0);
   const rungs: RungValue[] = [];
   for (const r of rs) {
-    const f = r.fDiff(c, v, cfg);
+    const f = r.fDiff(c, v, cfg, unit);
     total = add(total, mul(val(r.weight(cfg)), f));
     rungs.push({ name: r.name, f });
   }
@@ -107,12 +131,13 @@ export function rewardExact(
   v: ArrayLike<number>,
   dataType: ScaleType,
   cfg: Config,
+  unit: UnitClass,
 ): RewardExact {
   const rs = rungsForData(dataType);
   let total = 0;
   const rungs: RungExact[] = [];
   for (const r of rs) {
-    const f = r.fExact(c, v, cfg);
+    const f = r.fExact(c, v, cfg, unit);
     total += r.weight(cfg) * f;
     rungs.push({ name: r.name, f });
   }

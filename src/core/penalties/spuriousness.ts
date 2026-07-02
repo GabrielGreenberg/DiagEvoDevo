@@ -1,36 +1,47 @@
 // src/core/penalties/spuriousness.ts
 //
-// Spuriousness / overencoding (CONCEPT.md §8): structure the figure asserts beyond the data — the
-// canonical example is "equal spacing read as interval on ordinal labels." The order relation is
-// ordinal (1 rung), so any INTERVAL structure its carrier exhibits (evenly-spaced x-positions) is
-// surplus the data never granted. We measure it as F_int(orderCarrier, orderVector): high when the
-// figure fabricates even spacing, low when it does not. Counterpart to the ladder (which rewards
-// capture); kept on a separate book.
+// DATA-INK penalty (CONCEPT.md §8, v2 semantics — repurposed from "overencoding" by the scoring-v2
+// redesign): salient variation that carries NO data relation is fabricated structure the reader will
+// try to decode. Per distinct carrier m:
 //
-// Wired but zero-weighted in v1 (config.penalties.spuriousness = 0).
+//   ink_m = s_m · (1 − smoothmax_R q_m(R))          penalty = mean_m ink_m
+//
+// where s_m is the carrier's salience, q_m(R) its salience-gated cell for relation R, and smoothmax
+// is the SAME mean-LSE used to aggregate relations (β = config.aggregation.beta; mean-form keeps
+// smoothmax ≤ max ≤ 1, so every ink term is ≥ 0). A carrier that is quiet (s≈0) or that carries some
+// relation well (max q ≈ 1) costs nothing; loud-but-meaningless variation is charged. This supplies
+// the grounding / parallelism / quiet-unassigned-DOF pressure the audit found missing, without
+// hard-coding any chart form.
+//
+// The per-carrier q values are COMPUTED IN score.ts and passed via PenaltyContext.cells /
+// .cellsExact — the deepest correct layer: the penalty must see exactly the cells the reward saw,
+// and must never recompute them. Standalone contexts without cells score 0.
 
 import type { Value } from '../autograd/engine';
-import { val } from '../autograd/engine';
-import { orderVector } from '../data';
+import { val, sub, mul } from '../autograd/engine';
+import { mean } from '../autograd/ops';
+import { lseMean, lseMeanN } from '../fidelity/ladder';
 import type { Figure } from '../figure';
-import { getMeasurement } from '../measurements/registry';
-import { fInt, fIntExact } from '../fidelity/ladder';
 import type { Penalty, PenaltyContext } from './registry';
 
 export const spuriousness: Penalty = {
   name: 'spuriousness',
   weight: (cfg) => cfg.penalties.spuriousness,
-  value(leaves: Value[], ctx: PenaltyContext): Value {
-    const orderId = ctx.map.get('order');
-    if (orderId === undefined) return val(0);
-    const carrier = getMeasurement(orderId).extractValue(leaves, ctx.frame, ctx.page);
-    const ordVec = [...orderVector()].map((x) => val(x)); // constants
-    return fInt(carrier, ordVec, ctx.cfg.eps.corrVar); // surplus interval structure on ordinal data
+  value(_leaves: Value[], ctx: PenaltyContext): Value {
+    const cells = ctx.cells;
+    if (!cells || cells.length === 0) return val(0);
+    const beta = ctx.cfg.aggregation.beta;
+    const terms = cells.map((cell) =>
+      mul(cell.salience, sub(val(1), lseMean([...cell.q.values()], beta))),
+    );
+    return mean(terms);
   },
-  valueExact(figure: Figure, ctx: PenaltyContext): number {
-    const orderId = ctx.map.get('order');
-    if (orderId === undefined) return 0;
-    const carrier = getMeasurement(orderId).extract(figure, ctx.frame, ctx.page);
-    return fIntExact(carrier, orderVector());
+  valueExact(_figure: Figure, ctx: PenaltyContext): number {
+    const cells = ctx.cellsExact;
+    if (!cells || cells.length === 0) return 0;
+    const beta = ctx.cfg.aggregation.beta;
+    let s = 0;
+    for (const cell of cells) s += cell.salience * (1 - lseMeanN([...cell.q.values()], beta));
+    return s / cells.length;
   },
 };

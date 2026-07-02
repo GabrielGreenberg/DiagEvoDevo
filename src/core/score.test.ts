@@ -1,4 +1,8 @@
-// src/core/score.test.ts — the total score, in both scoring modes.
+// src/core/score.test.ts — the v2 total score, in both scoring modes.
+//
+// The heart of this file is the AUDIT REGRESSION GATE: under the v1 objective the degenerate
+// figures in fixtures.auditDegenerates BEAT the golden bar chart (confirmed illegible-optimum).
+// The v2 score must rank the golden bars above every one of them, on total S, forever.
 
 import { describe, it, expect } from 'vitest';
 import { val, type Value } from './autograd/engine';
@@ -6,104 +10,258 @@ import { config, type Config } from '../config';
 import { cloneFigure, segBase, seedToFigure, type Figure } from './figure';
 import { pageFromConfig, frameFromConfig } from './frame';
 import { scoreExact, scoreValue, type RelationBreakdown } from './score';
-import { REGISTRY } from './measurements/registry';
+import { seedToDataSet } from './data';
+import { REGISTRY, carriers } from './measurements/registry';
 import { frozenDof } from './penalties/frozenDof';
 import { economy } from './penalties/economy';
 import type { PenaltyContext } from './penalties/registry';
-import { wellSeparatedData, goldenBarChart } from './fixtures';
+import {
+  wellSeparatedData,
+  goldenBarChart,
+  auditDegenerates,
+  valueScale,
+  valueSortedBars,
+} from './fixtures';
+import { mulberry32, uniform } from './rng';
 
 const data = wellSeparatedData();
-const golden = goldenBarChart(data);
+const K = valueScale(data); // bars scaled into the ~100-unit page box (legible by construction)
+const golden = goldenBarChart(data, { k: K, spacing: 10, x0: 5 });
 const leavesOf = (f: Figure): Value[] => Array.from(f, (x) => val(x));
 const fixed: Config = { ...config, scoring: 'fixed' };
-const salesRel = (f: Figure, cfg = config): RelationBreakdown =>
-  scoreExact(f, data, cfg).relations.find((r) => r.key === 'sales')!;
+const rel = (f: Figure, key: 'sales' | 'order', cfg = config): RelationBreakdown =>
+  scoreExact(f, data, cfg).relations.find((r) => r.key === key)!;
 
-describe('score (fixed mode): golden bar chart scores the single-carrier max', () => {
-  it('quality = 1 (both relations fully satisfied); one measurement per relation', () => {
-    const b = scoreExact(golden, data, fixed);
-    expect(b.quality).toBeCloseTo(1, 6); // normalized: sales 7/7 + order 1/1 = 2 of 2
-    expect(b.reward).toBeCloseTo(2, 6);
-    for (const rel of b.relations) {
-      expect(rel.measurements.length).toBe(1);
-      expect(rel.normalized).toBeCloseTo(1, 6);
+describe('score v2: AUDIT REGRESSION GATE — golden bars beat every winning degenerate', () => {
+  it('golden > value-sorted bars, nested ray, collinear pileup, value spiral, random (total S)', () => {
+    for (const d of [data, seedToDataSet(1)]) {
+      const g = scoreExact(goldenBarChart(d, { k: valueScale(d), spacing: 10, x0: 5 }), d).total;
+      for (const { name, figure } of auditDegenerates(d)) {
+        expect(g, `golden vs ${name} (seed ${d.seed})`).toBeGreaterThan(scoreExact(figure, d).total + 0.1);
+      }
+      for (const s of [7, 13, 42]) {
+        expect(g, `golden vs random seed ${s}`).toBeGreaterThan(scoreExact(seedToFigure(s), d).total + 0.1);
+      }
     }
+  });
+  it('the degenerates lose WHERE they should: their order relation collapses', () => {
+    for (const { name, figure } of auditDegenerates(data)) {
+      expect(rel(figure, 'order').aggregated, name).toBeLessThan(0.3);
+    }
+    expect(rel(golden, 'order').aggregated).toBeGreaterThan(0.6);
   });
 });
 
-describe('score (comprehensive): the full matrix', () => {
-  it('sales scored vs 20 measurements (ratio+cyclic), order vs 26; nothing is NaN', () => {
+describe('score v2 (comprehensive): distinct-carrier matrix', () => {
+  it('sales scored vs 12 distinct ratio carriers, order vs all 16; counts come from carriers(cfg)', () => {
     const b = scoreExact(golden, data);
-    expect(b.relations.find((r) => r.key === 'sales')!.measurements.length).toBe(20);
-    expect(b.relations.find((r) => r.key === 'order')!.measurements.length).toBe(26);
+    expect(b.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(12);
+    expect(b.relations.find((r) => r.key === 'order')!.carriers.length).toBe(16);
+    expect(b.distinctCarriers).toBe(carriers(config).length);
+    expect(b.distinctCarriers).toBe(16);
+    expect(b.censusSize).toBe(REGISTRY.size);
     expect(Number.isFinite(b.reward)).toBe(true);
-    for (const rel of b.relations) for (const m of rel.measurements) expect(Number.isFinite(m.reward)).toBe(true);
   });
 
-  it('golden bars make MULTIPLE ratio measurements track sales (length AND rise AND height)', () => {
-    const sales = salesRel(golden);
-    const maxRung = sales.maxReward / sales.measurements.length; // 7
-    const tracking = sales.measurements.filter((m) => m.reward / maxRung >= 0.9);
-    expect(tracking.length).toBeGreaterThanOrEqual(2); // a rich homomorphism, not just one carrier
-    expect(sales.measurements.some((m) => m.id === 'page.displacement.magnitude' && m.reward / maxRung >= 0.9)).toBe(true);
+  it('breakdown rows carry the v2 fields: label, salience, q, aliases, signedTau, rungs', () => {
+    const sales = rel(golden, 'sales');
+    const len = sales.carriers.find((c) => c.id === 'page.displacement.magnitude')!;
+    expect(len.label).toBe('length');
+    expect(len.aliases).toContain('frame.displacement.magnitude');
+    expect(len.salience).toBeGreaterThan(0.85);
+    expect(len.q).toBeGreaterThan(0.7);
+    expect(len.rungs.map((r) => r.name)).toEqual(['ord', 'int', 'ratio']);
+    expect(len.signedTau).toBeGreaterThan(0.9); // lengths INCREASE with sales → ↑ direction
+    // order carriers: x positions run ↑ with the labels
+    const startX = rel(golden, 'order').carriers.find((c) => c.label === 'start x')!;
+    expect(startX.signedTau).toBeCloseTo(1, 9);
+    // a mirrored encoding shows ↓: bars at DECREASING x
+    const mirrored = cloneFigure(golden);
+    for (let i = 0; i < 12; i++) {
+      const b = segBase(i);
+      mirrored[b] = 120 - golden[b]!;
+      mirrored[b + 2] = 120 - golden[b + 2]!;
+    }
+    const mStartX = scoreExact(mirrored, data).relations.find((r) => r.key === 'order')!
+      .carriers.find((c) => c.label === 'start x')!;
+    expect(mStartX.signedTau).toBeCloseTo(-1, 9);
+    expect(mStartX.q).toBeGreaterThan(0.85); // and it still EARNS: reversed axes are legible
   });
 
-  it('is finite on random and degenerate figures (posEps + length floors)', () => {
-    for (let s = 0; s < 12; s++) expect(Number.isFinite(scoreExact(seedToFigure(s), data).reward)).toBe(true);
+  it('golden bars make MULTIPLE carriers track sales (length AND rise AND end y)', () => {
+    const sales = rel(golden, 'sales');
+    const tracking = sales.carriers.filter((c) => c.q >= 0.7);
+    expect(tracking.length).toBeGreaterThanOrEqual(3);
+    expect(sales.carriers[0]!.q).toBeGreaterThan(0.7);
+  });
+
+  it('is finite on random and degenerate figures (NaN-safety preserved)', () => {
+    for (let s = 0; s < 12; s++) {
+      const b = scoreExact(seedToFigure(s), data);
+      expect(Number.isFinite(b.total)).toBe(true);
+      for (const r of b.relations) for (const c of r.carriers) expect(Number.isFinite(c.q)).toBe(true);
+    }
     const collapsed = cloneFigure(golden);
     for (let i = 0; i < 12; i++) {
       const b = segBase(i);
       collapsed[b + 2] = collapsed[b]!;
       collapsed[b + 3] = collapsed[b + 1]!;
     }
-    expect(Number.isFinite(scoreExact(collapsed, data).reward)).toBe(true);
-    expect(Number.isFinite(scoreValue(leavesOf(collapsed), data).reward.data)).toBe(true);
+    expect(Number.isFinite(scoreExact(collapsed, data).total)).toBe(true);
+    expect(Number.isFinite(scoreValue(leavesOf(collapsed), data).total.data)).toBe(true);
+  });
+
+  it('random figures score LOW quality (the v1 33%-chance floor is gone)', () => {
+    for (const s of [3, 7, 11]) {
+      expect(scoreExact(seedToFigure(s), data).quality).toBeLessThan(0.25);
+    }
+    expect(scoreExact(golden, data).quality).toBeGreaterThan(0.6);
   });
 });
 
-describe('score (comprehensive): capturing MORE structure scores strictly higher', () => {
-  it('vertical bars (length+rise+height match sales) beat same-length bars at random angles', () => {
-    // random-orientation bars: |displacement| = value (length matches) but rise/projections do NOT
+describe('score v2: LSE monotonicity (division of labor without losing "more matches wins")', () => {
+  it('adding a matching carrier RAISES the relation: vertical bars > same-length random-angle bars', () => {
+    // random-orientation bars: |displacement| = k·value (length matches) but rise/end-y do NOT
     const lengthOnly = cloneFigure(golden);
     for (let i = 0; i < 12; i++) {
       const b = segBase(i);
       const x = golden[b]!;
-      const len = data.values[i]!;
-      const theta = (i * 2.399963) % (2 * Math.PI); // deterministic pseudo-random angles
+      const len = K * data.values[i]!;
+      const theta = (i * 2.399963) % (2 * Math.PI);
       lengthOnly[b] = x;
       lengthOnly[b + 1] = 0;
       lengthOnly[b + 2] = x + len * Math.cos(theta);
       lengthOnly[b + 3] = len * Math.sin(theta);
     }
-    // both have length ∝ value, but golden also has rise/height ∝ value → more of the matrix satisfied
-    expect(salesRel(golden).reward).toBeGreaterThan(salesRel(lengthOnly).reward + 1e-6);
+    expect(rel(golden, 'sales').aggregated).toBeGreaterThan(rel(lengthOnly, 'sales').aggregated + 1e-4);
+  });
+  it('one perfect+salient carrier beats many mediocre ones (value-sorted x helps sales less than losing order costs)', () => {
+    // value-sorted bars give sales MANY partial carriers; golden gives sales a few PERFECT ones and
+    // keeps order intact — golden must win on total (the audit's central failure, inverted).
+    expect(scoreExact(golden, data).total).toBeGreaterThan(scoreExact(valueSortedBars(data), data).total);
   });
 });
 
-describe('score (comprehensive): scale invariance (translation is NOT a symmetry — the frame anchors it)', () => {
-  it('scaling ALL coordinates about the frame origin leaves the reward unchanged', () => {
-    const base = scoreExact(golden, data).reward;
-    for (const k of [5, 0.2]) {
-      const scaled = cloneFigure(golden);
-      for (let i = 0; i < scaled.length; i++) scaled[i] = golden[i]! * k;
-      expect(scoreExact(scaled, data).reward, `k=${k}`).toBeCloseTo(base, 5);
+describe('score v2: salience gate (audit defect 3: resolution-free fidelity)', () => {
+  const scaled = (k: number): Figure => {
+    const f = cloneFigure(golden);
+    for (let i = 0; i < f.length; i++) f[i] = golden[i]! * k;
+    return f;
+  };
+  it('a sub-legible (sub-pixel) perfect figure earns ≈ 0 on every LENGTH-class carrier', () => {
+    const b = scoreExact(scaled(0.001), data); // spans ~0.1 page units ≪ θ_len
+    // sales carriers are ALL length-class → the whole relation is gated to ~0
+    expect(b.relations.find((r) => r.key === 'sales')!.aggregated).toBeLessThan(0.02);
+    // order keeps only its angle-class residue (bearings are scale-free BY DESIGN — a uniform
+    // shrink preserves angular structure; θ_ang gates angle spread, not figure size)
+    for (const c of b.relations.find((r) => r.key === 'order')!.carriers) {
+      if (c.id.includes('angle')) continue;
+      expect(c.q, c.id).toBeLessThan(0.02);
+    }
+    expect(b.quality).toBeLessThan(0.1);
+  });
+  it('growing the spread recovers the score monotonically (scale is NO LONGER a full symmetry)', () => {
+    const rewards = [0.001, 0.01, 0.1, 1].map((k) => scoreExact(scaled(k), data).reward);
+    for (let i = 1; i < rewards.length; i++) expect(rewards[i]!).toBeGreaterThan(rewards[i - 1]!);
+  });
+  it('ABOVE the reader resolution the score saturates (large figures score alike)', () => {
+    const r5 = scoreExact(scaled(5), data).reward;
+    const r10 = scoreExact(scaled(10), data).reward;
+    expect(Math.abs(r10 - r5)).toBeLessThan(0.02);
+  });
+  it('in fixed mode a perfect-but-invisible carrier is also ≈ 0 (same ladder, same gate)', () => {
+    expect(scoreExact(scaled(0.001), data, fixed).quality).toBeLessThan(0.05);
+    expect(scoreExact(golden, data, fixed).quality).toBeGreaterThan(0.8);
+  });
+});
+
+describe('score v2 (fixed mode): same ladder + salience on the single configured carriers', () => {
+  it('golden scores high quality; one carrier per relation; aggregated = its own q (LSE of one)', () => {
+    const b = scoreExact(golden, data, fixed);
+    expect(b.quality).toBeGreaterThan(0.8);
+    for (const r of b.relations) {
+      expect(r.carriers.length).toBe(1);
+      expect(r.aggregated).toBeCloseTo(r.carriers[0]!.q, 9);
     }
   });
 });
 
-describe('score: penalties are wired but zero-weighted (no effect on the total)', () => {
-  it('penalty = 0 at default weights; total = reward in both modes', () => {
-    for (const cfg of [config, fixed]) {
-      const b = scoreExact(golden, data, cfg);
-      expect(b.penalty).toBe(0);
-      expect(b.total).toBeCloseTo(b.reward, 9);
-      for (const p of b.penalties) expect(p.weight).toBe(0);
+describe('score v2: data-ink penalty (spuriousness, ON by default at 0.25)', () => {
+  it('is wired with its weight and charged: random figures pay MORE ink than golden bars', () => {
+    const g = scoreExact(golden, data);
+    const r = scoreExact(seedToFigure(7), data);
+    const gInk = g.penalties.find((p) => p.name === 'spuriousness')!;
+    const rInk = r.penalties.find((p) => p.name === 'spuriousness')!;
+    expect(gInk.weight).toBe(config.penalties.spuriousness);
+    expect(gInk.weight).toBeGreaterThan(0);
+    expect(rInk.weighted).toBeGreaterThan(gInk.weighted + 0.05); // loud meaningless variation costs
+    expect(gInk.value).toBeGreaterThanOrEqual(0); // mean-LSE keeps every ink term ≥ 0
+    expect(g.total).toBeCloseTo(g.reward - g.penalty, 9);
+  });
+  it('quiet unassigned DOF cost nothing: golden (constant baseline/tilt/run) pays little ink', () => {
+    const gInk = scoreExact(golden, data).penalties.find((p) => p.name === 'spuriousness')!;
+    expect(gInk.value).toBeLessThan(0.3);
+  });
+  it('value path and exact path agree on the penalty (within the ordinal-surrogate fork)', () => {
+    const sv = scoreValue(leavesOf(golden), data);
+    expect(Math.abs(sv.penalty.data - scoreExact(golden, data).penalty)).toBeLessThan(0.01);
+  });
+  it('FIXED mode: loud meaningless variation on UNASSIGNED DOF pays ink (audit defect 10, fixed mode)', () => {
+    // Same encodings on the two configured carriers (start x preserved → order; length preserved →
+    // sales) but randomized tilts and baselines: numerically perfect fixed-mode "bars" rendered as
+    // pick-up-sticks. The data-ink mean runs over the FULL deduped carrier set M(cfg) even in fixed
+    // mode, so the pick-up-sticks must pay strictly more spuriousness and score a lower total.
+    const rng = mulberry32(31);
+    const messy = cloneFigure(golden);
+    for (let i = 0; i < 12; i++) {
+      const b = segBase(i);
+      const len = Math.hypot(golden[b + 2]! - golden[b]!, golden[b + 3]! - golden[b + 1]!);
+      const baseY = uniform(rng, -40, 40);
+      const th = uniform(rng, 0, 2 * Math.PI);
+      messy[b + 1] = baseY; // random baseline (start x at b+0 untouched)
+      messy[b + 2] = golden[b]! + len * Math.cos(th); // random tilt, length preserved
+      messy[b + 3] = baseY + len * Math.sin(th);
     }
-    expect(scoreValue(leavesOf(golden), data).penalty.data).toBe(0);
+    const g = scoreExact(golden, data, fixed);
+    const m = scoreExact(messy, data, fixed);
+    const ink = (bd: typeof g): number => bd.penalties.find((p) => p.name === 'spuriousness')!.weighted;
+    expect(m.reward).toBeCloseTo(g.reward, 9); // the two assigned carriers are IDENTICAL vectors
+    expect(ink(m)).toBeGreaterThan(ink(g) + 0.02); // …but the fabricated structure is charged
+    expect(m.total).toBeLessThan(g.total - 0.02);
+    // the penalty saw the full deduped set, not just the 2 assigned carriers
+    expect(g.distinctCarriers).toBe(16);
+    // and the differentiable path agrees (the ink gradient exists on unassigned DOF in fixed mode)
+    const sv = scoreValue(leavesOf(messy), data, fixed);
+    expect(Math.abs(sv.penalty.data - m.penalty)).toBeLessThan(0.01);
+  });
+  it('frozenDof/economy remain registered at weight 0', () => {
+    const b = scoreExact(golden, data);
+    for (const name of ['frozenDof', 'economy'] as const) {
+      const t = b.penalties.find((p) => p.name === name)!;
+      expect(t.weight).toBe(0);
+      expect(t.weighted).toBe(0);
+    }
   });
 });
 
-describe('penalties: still compute sane values on hand-built inputs', () => {
+describe('score v2: scoreValue ≈ scoreExact at small T (the only fork is the ordinal surrogate)', () => {
+  it('golden + degenerates + random agree within tolerance', () => {
+    const cfg: Config = { ...config, T: 0.002 };
+    const figures: [string, Figure][] = [
+      ['golden', golden],
+      ...auditDegenerates(data).map(({ name, figure }) => [name, figure] as [string, Figure]),
+      ['random', seedToFigure(5)],
+    ];
+    for (const [name, f] of figures) {
+      const sv = scoreValue(leavesOf(f), data, cfg);
+      const se = scoreExact(f, data, cfg);
+      expect(Math.abs(sv.total.data - se.total), name).toBeLessThan(0.05);
+      expect(Math.abs(sv.reward.data - se.reward), name).toBeLessThan(0.05);
+    }
+  });
+});
+
+describe('penalties: still compute sane values on hand-built contexts (cells optional)', () => {
   const penCtx: PenaltyContext = {
     map: new Map([
       ['sales', config.fixedCarriers.sales],

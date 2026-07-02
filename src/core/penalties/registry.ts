@@ -18,6 +18,23 @@ import { economy } from './economy';
 
 export type PenaltyName = 'spuriousness' | 'frozenDof' | 'economy';
 
+/** One scored cell as computed by score.ts (differentiable path): the carrier's salience and its
+ *  per-relation q values. The data-ink penalty CONSUMES these — score.ts computes each cell exactly
+ *  once per eval and passes them down; the penalty layer never re-extracts or re-scores (v2). */
+export interface CellQValue {
+  readonly id: string;
+  readonly salience: Value;
+  /** relation key → q ∈ [0,1] (salience-gated, rung-normalized cell). */
+  readonly q: ReadonlyMap<string, Value>;
+}
+
+/** Exact twin of CellQValue (display path). */
+export interface CellQExact {
+  readonly id: string;
+  readonly salience: number;
+  readonly q: ReadonlyMap<string, number>;
+}
+
 export interface PenaltyContext {
   readonly map: AssignmentMap;
   readonly registry: ReadonlyMap<string, Measurement>;
@@ -25,6 +42,10 @@ export interface PenaltyContext {
   readonly page: Page;
   readonly data: DataSet;
   readonly cfg: Config;
+  /** The scored cells (differentiable path). Present when called from scoreValue. */
+  readonly cells?: readonly CellQValue[];
+  /** The scored cells (exact path). Present when called from scoreExact. */
+  readonly cellsExact?: readonly CellQExact[];
 }
 
 export interface Penalty {

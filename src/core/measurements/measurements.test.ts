@@ -1,4 +1,4 @@
-// src/core/measurements/measurements.test.ts — M2 gate for the measurement stock.
+// src/core/measurements/measurements.test.ts — gate for the measurement stock + v2 carrier dedup.
 
 import { describe, it, expect } from 'vitest';
 import { val, type Value } from '../autograd/engine';
@@ -14,8 +14,10 @@ import {
   stampOf,
   getMeasurement,
   liveMeasurements,
+  carriers,
+  carrierFor,
 } from './registry';
-import { N_ITEMS } from '../../config';
+import { N_ITEMS, config, type Config } from '../../config';
 
 const leavesOf = (f: Float64Array): Value[] => Array.from(f, (x) => val(x));
 
@@ -153,6 +155,136 @@ describe('measurements: differentiable path matches plain path (one code path)',
         }
       }
     }
+  });
+});
+
+describe('measurements: plain-English labels + unit classes (v2)', () => {
+  it('page cells carry the canonical plain labels; frame cells are fr·-prefixed', () => {
+    const expected: Record<string, string> = {
+      'page.start.projPar': 'start x',
+      'page.start.projPerp': 'start y',
+      'page.end.projPar': 'end x',
+      'page.end.projPerp': 'end y',
+      'page.midpoint.projPar': 'mid x',
+      'page.midpoint.projPerp': 'mid y',
+      'page.displacement.projPar': 'run',
+      'page.displacement.projPerp': 'rise',
+      'page.displacement.magnitude': 'length',
+      'page.displacement.angle': 'angle',
+      'frame.start.projPar': 'fr·start x',
+      'frame.start.magnitude': 'fr·start dist',
+      'frame.midpoint.angle': 'fr·mid angle',
+      'frame.displacement.magnitude': 'fr·length',
+    };
+    for (const [id, label] of Object.entries(expected)) {
+      expect(getMeasurement(id).label, id).toBe(label);
+    }
+    // every live cell has a nonempty label with NO raw glyph tokens
+    for (const m of liveMeasurements()) {
+      expect(m.label.length).toBeGreaterThan(0);
+      expect(m.label).not.toMatch(/projPar|projPerp|magnitude|displacement/);
+    }
+  });
+  it('unitClass: angle readings are radians, all else page-unit lengths', () => {
+    for (const m of liveMeasurements()) {
+      expect(m.unitClass).toBe(m.reading === 'angle' ? 'angle' : 'length');
+    }
+  });
+});
+
+describe('measurements: v2 distinct-carrier dedup (audit: 10 of 26 cells were exact duplicates)', () => {
+  const golden = (cfg: Config = config): ReturnType<typeof carriers> => carriers(cfg);
+
+  it('default geometry (frame ∥ page at origin) dedupes 26 → 16 distinct carriers', () => {
+    const all = golden();
+    expect(all.length).toBe(16);
+    // every registry cell is accounted for exactly once (canonical or alias)
+    const seen = new Set<string>();
+    for (const c of all) {
+      seen.add(c.id);
+      for (const a of c.aliases) {
+        expect(seen.has(a)).toBe(false);
+        seen.add(a);
+      }
+    }
+    expect(seen.size).toBe(26);
+  });
+
+  it('merged point projections keep the MAX stamp (ratio via the frame) and the plain label', () => {
+    const all = golden();
+    const startX = carrierFor('page.start.projPar', all);
+    expect(startX.id).toBe('frame.start.projPar'); // canonical = max-stamp member
+    expect(startX.stamp).toBe(ScaleType.Ratio); // upgraded from the page cell's interval
+    expect(startX.label).toBe('start x'); // unprefixed: a page cell reads the same vector
+    expect(startX.aliases).toEqual(['page.start.projPar']);
+  });
+
+  it('displacement cells merge with the PAGE cell canonical (stamps tie); magnitude always merges', () => {
+    const all = golden();
+    const len = carrierFor('frame.displacement.magnitude', all);
+    expect(len.id).toBe('page.displacement.magnitude');
+    expect(len.label).toBe('length');
+    expect(len.aliases).toEqual(['frame.displacement.magnitude']);
+    const run = carrierFor('frame.displacement.projPar', all);
+    expect(run.id).toBe('page.displacement.projPar');
+    expect(run.label).toBe('run');
+  });
+
+  it('the dedup is STRUCTURAL: a rotated frame keeps only the magnitude merge (26 → 25)', () => {
+    const rotated: Config = {
+      ...config,
+      frame: { ...config.frame, origin: [0, 0], direction: [Math.cos(0.6), Math.sin(0.6)] },
+    };
+    const all = golden(rotated);
+    expect(all.length).toBe(25); // only |displacement| is direction-free
+    expect(carrierFor('frame.displacement.magnitude', all).id).toBe('page.displacement.magnitude');
+    // point projections now genuinely differ → both anchors present as distinct carriers
+    expect(all.some((c) => c.id === 'page.start.projPar' && c.aliases.length === 0)).toBe(true);
+    expect(all.some((c) => c.id === 'frame.start.projPar' && c.aliases.length === 0)).toBe(true);
+  });
+
+  it('a shifted frame (∥ page, origin ≠ 0) unmerges the point projections but not displacement', () => {
+    const shifted: Config = { ...config, frame: { ...config.frame, origin: [10, 0] } };
+    const all = golden(shifted);
+    expect(all.length).toBe(26 - 4); // the 4 displacement merges survive; 6 point merges do not
+    expect(all.some((c) => c.id === 'page.start.projPar' && c.aliases.length === 0)).toBe(true);
+  });
+
+  it('an ANTI-parallel frame does NOT merge projections (they negate, not equal)', () => {
+    const anti: Config = { ...config, frame: { origin: [0, 0], direction: [-1, 0] } };
+    const all = golden(anti);
+    expect(all.length).toBe(25); // magnitude only
+  });
+
+  it('merged members are extensionally EQUAL on random figures (the merge is sound)', () => {
+    const all = golden();
+    for (const c of all) {
+      for (const aliasId of c.aliases) {
+        const alias = getMeasurement(aliasId);
+        for (let s = 0; s < 5; s++) {
+          const f = seedToFigure(s + 40);
+          const a = c.measurement.extract(f);
+          const b = alias.extract(f);
+          for (let i = 0; i < N_ITEMS; i++) expect(a[i]!, `${c.id}≡${aliasId}[${i}]`).toBeCloseTo(b[i]!, 9);
+        }
+      }
+    }
+  });
+
+  it('carrierFor resolves canonical ids AND aliases; unknown ids throw', () => {
+    const all = golden();
+    expect(carrierFor('page.displacement.magnitude', all).id).toBe('page.displacement.magnitude');
+    expect(carrierFor('frame.end.projPerp', all).id).toBe('frame.end.projPerp');
+    expect(() => carrierFor('page.nothing.here', all)).toThrow(/No distinct carrier/);
+  });
+
+  it('distinct census: 12 ratio + 4 cyclic under the default geometry; sales sees 12, order 16', () => {
+    const all = golden();
+    const byStamp: Record<string, number> = { ratio: 0, cyclic: 0, interval: 0, ordinal: 0 };
+    for (const c of all) byStamp[c.stamp]!++;
+    expect(byStamp[ScaleType.Ratio]).toBe(12); // 6 point projections + 3 point dists + run/rise/length
+    expect(byStamp[ScaleType.Cyclic]).toBe(4); // 3 point angles + tilt
+    expect(byStamp[ScaleType.Interval]).toBe(0); // every page projection was upgraded by its frame twin
   });
 });
 

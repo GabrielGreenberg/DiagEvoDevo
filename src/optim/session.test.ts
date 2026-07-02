@@ -44,9 +44,15 @@ describe('session: temperature annealing', () => {
 describe('session: converges to a faithful bar chart (the v1 gate)', () => {
   it(
     'BOTH relations encode (balanced by per-relation normalization): value via a ratio, order via a position',
-    () => {
+    async () => {
       const s = createSession(2, 1);
-      s.run();
+      // Run in batches, yielding to the event loop between them: a single synchronous multi-minute
+      // run() starves the vitest worker's RPC channel ("Timeout calling onTaskUpdate" → exit 1
+      // even with every test green). Same trajectory — step order and RNG are untouched.
+      while (s.status !== 'converged') {
+        s.run(200);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       const b = s.breakdown();
       const sales = b.relations.find((r) => r.key === 'sales')!;
       const order = b.relations.find((r) => r.key === 'order')!;

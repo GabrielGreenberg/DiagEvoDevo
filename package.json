@@ -14,6 +14,7 @@
     "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\"",
     "check": "npm run typecheck && npm run lint && npm run test",
     "bench": "vite-node scripts/bench.ts",
+    "accept": "vite-node scripts/accept.ts",
     "gradcheck": "vitest run -t gradcheck"
   },
   "devDependencies": {

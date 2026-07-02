@@ -17,6 +17,10 @@ export type Anchor = 'page' | 'frame';
 export type Part = 'start' | 'end' | 'midpoint' | 'displacement';
 export type Reading = 'projPar' | 'projPerp' | 'magnitude' | 'angle';
 
+/** The unit class of a reading: lengths/positions live in page units, bearings in radians.
+ *  Drives the unit-appropriate salience θ and legibility spread floor (CONCEPT §6 v2). */
+export type UnitClass = 'length' | 'angle';
+
 export const ANCHORS: readonly Anchor[] = ['page', 'frame'];
 export const PARTS: readonly Part[] = ['start', 'end', 'midpoint', 'displacement'];
 export const READINGS: readonly Reading[] = ['projPar', 'projPerp', 'magnitude', 'angle'];
@@ -24,10 +28,14 @@ export const READINGS: readonly Reading[] = ['projPar', 'projPerp', 'magnitude',
 export interface Measurement {
   /** e.g. 'frame.end.projPar'. */
   readonly id: string;
+  /** Plain-English name for the UI (v2 user request): 'start x', 'run', 'length', 'fr·start dist' … */
+  readonly label: string;
   readonly anchor: Anchor;
   readonly part: Part;
   readonly reading: Reading;
   readonly stamp: ScaleType;
+  /** 'length' (page units) or 'angle' (radians). */
+  readonly unitClass: UnitClass;
   /** Plain-number path (display / exact metrics): the length-12 reading vector. */
   extract(figure: Figure, frame?: PositedFrame, page?: Page): Float64Array;
   /** Differentiable path: same formula over the 48 Value leaves → length-12 Value vector. */

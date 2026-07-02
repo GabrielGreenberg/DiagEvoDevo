@@ -71,7 +71,8 @@ angle = tilt remain defined even on the page.)
 Two coincidences to remember: **length is anchor-free** (displacement magnitude is
 identical under both anchors), so the 26 live types resolve to **25** genuinely distinct
 numbers; run/rise/tilt also coincide across anchors *unless* the posited frame is rotated
-relative to the page.
+relative to the page. (§5 formalizes all such coincidences as the structural
+distinct-carrier dedup — under the v1 geometry only 16 of the 26 cells are distinct.)
 
 ### Scale type is the payload
 Every cell is stamped with the structure it can carry, read off the frame:
@@ -92,13 +93,15 @@ length are ratio even on a bare page — and why a bar carries proportion with n
   marginals*, so we never loop over pairs — a fidelity term compares two 12-vectors.
 
 ### The funnel (share this with a colleague)
-`48 free parameters → 312 live measurements → the full commensurable matrix → per-relation normalized sum → 1 score`
-where each data relation is compared, like-with-like, against **every** commensurable measurement (sales:ratio →
-the 20 with stamp ≥ ratio; order:ordinal → all 26), each such comparison graded on its rungs (§6), and the pair
-axis collapses into the marginals. The score is the **per-relation-normalized sum** over the whole matrix
-(§7): more geometric relations tracking the data ⇒ higher score, with each relation's contribution scaled to
-[0,1] so no relation drowns the others. (An earlier draft "assigned" one carrier per relation; that is now the
-optional `fixed` scoring mode, and `argmax` assignment is retained only for the invention lens.)
+`48 free parameters → 312 live measurement-values → distinct carriers (structural dedup, §5) → salience-gated cells → per-relation smooth-max (LSE) → reward − data-ink = 1 score`
+where each data relation is compared, like-with-like, against **every** commensurable *distinct carrier*
+(sales:ratio → the 12 ratio-stamped carriers; order:ordinal → all 16, under the v1 geometry), each comparison
+graded on its rungs and gated by salience (§6), and the pair axis collapses into the marginals. Within a
+relation the cells aggregate by a **log-sum-exp smooth-max** (§7): one excellent carrier dominates, and every
+further matching carrier still strictly raises the score. Each relation's value is normalized to [0,1] so no
+relation drowns the others; salient carriers that track nothing are charged by the data-ink penalty (§8).
+(An earlier draft "assigned" one carrier per relation; that is now the optional `fixed` scoring mode, and
+`argmax` assignment is retained only for the invention lens.)
 
 ## 5. Like-with-like (commensurability)
 
@@ -113,35 +116,122 @@ units, and scale type. This is the *same* principle as the data-side scale match
 applied once *within* the figure vector (all 12 entries one reading) and once *across* the
 figure–data boundary (figure vector and data vector same scale type).
 
+### Distinct carriers (structural dedup)
+
+The 26-cell census is the *theory's* stock; **scoring runs over the distinct-carrier set**
+`carriers(cfg)`. Under a given geometry some cells are extensionally equal — they read the
+same 12-vector on every possible figure. Scoring the raw census double-counts them: the
+audit confirmed that under the v1 frame (∥ page, origin at the page origin) 10 of the 26
+cells are exact duplicates — only **16 distinct carriers** — and 16 apparently independent
+projection rows had rank 4. Once aggregation, penalties, and "N carriers tracking" counts
+range over cells, fake multiplicity is a scoring error, not a cosmetic one.
+
+The dedup is **structural** — decided from the configured geometry, never by numeric
+sampling — so it stays correct when frames move (M8+):
+
+- displacement **magnitude** (= length) is anchor- *and* direction-free → page ≡ frame, always;
+- displacement **projections/angle** depend only on the direction → page ≡ frame iff the two
+  directions are parallel *with the same sense* (anti-parallel readings negate, which is not
+  extensional equality);
+- **point projections** subtract the frame origin → frame ≡ page iff the frame is ∥ the page
+  AND its origin sits at the page origin.
+
+A merged carrier keeps the **maximum stamp** of its members (e.g. `start x` read against a
+frame origin is *ratio*, not interval — the frame member upgrades the page member), records
+the merged-away cells as aliases, and takes the plain page label. Under the v1 geometry the
+16 distinct carriers stamp as **12 ratio + 4 cyclic**: sales is commensurable with 12,
+order with all 16 (§7). Every mean, LSE, carrier count, and penalty in §§7–8 ranges over
+this set.
+
 ## 6. The fidelity ladder (the graded score)
 
-For an assigned figure measurement `c ∈ ℝ¹²` and a data vector `v ∈ ℝ¹²`, fidelity is
-graded on **nested rungs of increasing strictness**. The rungs nest downward: perfect
-ratio ⇒ perfect interval ⇒ perfect order. Partial credit = "captured the ordinal
-structure but not the ratio structure."
+For a figure carrier `c ∈ ℝ¹²` and a data vector `v ∈ ℝ¹²`, fidelity is graded on
+**nested rungs of increasing strictness**. The rungs nest downward: perfect ratio ⇒ perfect
+interval ⇒ perfect order. Partial credit = "captured the ordinal structure but not the
+ratio structure."
 
-**Ordinal rung** — order agreement.
-- Exact: `F_ord = (concordant pairs) / (total pairs)`, ties counted 0.5. Equivalently
-  `(Kendall τ + 1)/2`. `= 1` iff `c` is any monotone-increasing function of `v`.
-- Differentiable surrogate:
-  `F_ord ≈ mean_{i<j} σ( sign(v_i − v_j) · (c_i − c_j) / T )`, `σ` logistic, `T` temperature.
+Two v2 principles govern every rung (both forced by the confirmed audit findings):
+
+- **Direction symmetry.** Legibility is decodability *up to axis direction*: a reversed
+  axis is readable, and a mirrored (all-negative) encoding is legible — the sign of an axis
+  is a reading convention, not information. v1's direction-committed rungs also mixed badly
+  with the sign-blind r²: an anti-encoding earned full interval reward with zero ordinal
+  reward, a nesting violation that parked the optimizer on anti-plateaus. Every v2 rung is
+  direction-symmetric, and nesting holds in the symmetric sense (tested):
+  `c = ±k·v ⇒ F_ratio = 1 ⇒ F_int = 1 ⇒ τ_sym = 1`.
+- **No hidden chance floors.** A random or constant carrier scores ≈ 0 on every rung. (v1:
+  a constant carrier scored F_ord = 0.5, so random figures displayed ~33% quality, order
+  ~50%, and order's usable range was ~0.15 against sales' ~0.74.) The one accepted residue
+  is r²'s chance level `1/(n−1) ≈ 0.09` at n = 12 — small, documented, kept.
+
+**Ordinal rung** — order agreement, `τ_sym`.
+- Exact: `F_ord = (concordant pairs)/(total pairs)`, ties counted 0.5 (= `(Kendall τ+1)/2`).
+  The rung's fidelity is `τ_sym = |2·F_ord − 1| = |Kendall τ|`: 0 at chance and on constant
+  carriers, 1 when `c` is monotone in `v` **either way**.
+- Differentiable surrogate (`σ` logistic, `T` a dimensionless temperature):
+  ```
+  F_ord ≈ mean_{i<j} σ( sign(vᵢ − vⱼ) · (cᵢ − cⱼ) / (T · spread′(c)) )
+  spread′(c) = max( √(Var(c) + ε), ℓ_min )          τ_sym = √( (2·F_ord − 1)² + ε_abs )
+  ```
+  The margin is spread-normalized (order is scale-free), but the denominator is **floored
+  at the legibility scale** `ℓ_min`, per the carrier's unit class (page units for
+  position/length carriers, radians for angles; `config.legibility`). The floor kills the
+  1/spread gradient explosion (v1: near-constant carriers dominated the order gradient
+  ~1e8×, actively tearing apart the constancies — baseline, tilt — that legibility needs)
+  AND closes the sub-pixel-order loophole: order compressed below the legibility scale
+  reads as ties (F_ord → ½ ⇒ τ_sym → 0). The exact display form carries no floor — it
+  reports true order; sub-legibility is the job of the surrogate and the salience gate.
 
 **Interval rung** — spacing agreement.
-- `F_int = r²(c, v)` (squared Pearson correlation) `= 1` iff `c = a·v + b` for some `a>0,b`.
-  Correlation's affine-invariance *is* interval-scale invariance.
+- `F_int = r²(c, v)` `= 1` iff `c = a·v + b`, `a ≠ 0`. Correlation's affine-invariance *is*
+  interval-scale invariance, and r² is already direction-symmetric.
 
-**Ratio rung** — proportion agreement (requires `c, v > 0`).
-- Defect `= Var_i( log c_i − log v_i )`. `F_ratio = exp( −Var(log c − log v) / σ₀² ) ∈ (0,1]`,
-  `= 1` iff `c = k·v` for some `k>0`. Invariant to the figure's overall scale `k`, as
-  fidelity should be; `log` repels degenerate (zero-length) segments.
-
-**Nesting check (must hold, is tested):** `c = k·v (k>0) ⇒ F_ratio=1 ⇒ F_int=1 ⇒ F_ord=1`.
-
-**Score of one assignment** `r ↦ m(r)`:
+**Ratio rung** — proportion agreement, signed-safe (v2.1; replaces the positivity clamp).
 ```
-reward(r) = Σ_{rung ≤ type(r)}  w_rung · F_rung( extract_{m(r)}(figure),  datavec(r) )
+|c|ᵢ    = √(cᵢ² + ε)                                   smooth magnitude (log|c| finite at 0)
+dᵢ      = log|c|ᵢ − log vᵢ                              per-entry log ratio (v > 0 by §2)
+base    = exp( −Var(d) / σ₀² )                          magnitude carries proportion
+ŝ       = exp( mean d )                                 the v-implied carrier scale (|c| ≈ ŝ·v)
+coh     = |2·mean_i σ( cᵢ / (κ·ŝ·vᵢ) ) − 1| / tanh(1/(2κ))     sign coherence (smooth |·|)
+F_ratio = base · coh
 ```
-with weights `w_ord < w_int < w_ratio` so more captured structure always scores higher.
+- `base = 1` iff `|c| = k·v` for some `k>0`; invariant to the figure's overall scale
+  (`log k` drops out of the variance), as fidelity should be. `coh` demands a **coherent
+  sign — either sign** (mirrored encodings are legible): mixed signs ⇒ coh ≈ 0, and a
+  degenerate constant/zero carrier gets σ(0) = ½ per entry ⇒ coh ≈ 0 — **no free reward**.
+  The gradient is smooth across 0. (v1's clamp `log(max(c, ε))` paid every all-negative
+  carrier a free, gradient-dead `exp(−Var(log v)/σ₀²) ≈ 0.18` and walled off sign-crossing
+  with a reward valley; 15 of sales' 20 v1 carriers are signed, so the heaviest rung was
+  dead or perverse on most of its matrix.)
+- Each entry's sign test is normalized by its own **v-implied magnitude** `κ·ŝ·vᵢ`, and the
+  ceiling `tanh(1/(2κ)) = |2σ(1/κ) − 1|` — the coherence of an exactly proportional
+  carrier — is divided out. Hence `F_ratio = 1` **exactly iff `c = ±k·v`**, and
+  proportionality is a stationary point of coh (the mean-log constraint cancels the
+  ŝ-feedback), so the optimizer does not warp perfect bars. (The v2.0 spec's
+  spread-relative sign test `σ(cᵢ/(κ·spread(c)))` failed both properties: it capped a
+  perfect proportional carrier at a data-dependent ~0.68 and made a power-law warp
+  `c ∝ v^0.78` the optimum — the confirmed v2.1 review blocker.) The ceiling is *derived*
+  from κ, never tuned; the derivation holds while `σ(1/κ) ≥ 1 − 1/(2n)` (κ ≲ 0.32 at
+  n = 12; default 0.2). κ is a sharp sign test, not a magnitude tolerance.
+
+### The salience gate — the reader model
+
+Every rung is scale/affine-invariant, which means fidelity alone is **resolution-free**: a
+"perfect" carrier can be sub-pixel. (Audit: a certified τ = 0.97 order carrier spanning 21
+units under 109-unit segments — the score vouched for an encoding no reader can see.) The
+missing piece of the fidelity theory is a reader model, and it enters as a **gate on every
+cell**, not as a rung:
+
+```
+s(c)   = Var(c) / (Var(c) + θ²)        θ per unit class (θ_len page units, θ_ang radians)
+q_m(R) = s(c_m) · Σ_{rung ≤ type(R)} w_rung · F_rung(c_m, v_R) / maxRung(R)   ∈ [0,1]
+```
+
+A carrier whose variation sits below the reader's resolution θ earns ≈ 0 — and (§8) is not
+worth ink. The gate is also the **principled home of the M10 Cleveland–McGill anchor**:
+decodability differences between readings (position > length > angle > …) just *are*
+differences in reader resolution, so calibration means measuring θ per reading class
+instead of hand-tuning weights.
 
 ### Ladder height is set by the DATA, never the figure
 The number of rungs equals the **data relation's** own scale type, not the measurement's.
@@ -158,47 +248,102 @@ spacing = log-or-√ scale (miss interval); right spacing/wrong zero = truncated
 
 ### Weight calibration (open problem, flagged)
 `F_int` (an r²) and `F_ratio` (an exp-of-variance) are not on a common natural unit, so
-`w_ord, w_int, w_ratio` do real work. Preferred principled anchor: **Cleveland–McGill
-decodability** (position > length > angle > area …) so weights are empirical, not chosen.
-Keep them in `config`; treat calibration as a first-class task, not a magic number.
+`w_ord, w_int, w_ratio` do real work; they stay in `config`. The preferred principled
+anchor — **Cleveland–McGill decodability** (position > length > angle > area …) — now has
+its natural home in the salience gate's per-class resolutions θ (above): M10 is to
+*measure* θ per reading class (and re-examine the rung weights) rather than choose numbers.
+Treat calibration as a first-class task, not a magic number.
 
-## 7. Comprehensive scoring (and the assignment lenses)
+## 7. Comprehensive scoring — the LSE aggregation (and the assignment lenses)
 
-Legality is **`type(data) ≤ stamp(measurement)`** (read a stamp down, never up), over the reads-down
-order `ordinal ≤ interval ≤ ratio ≤ cyclic` — **cyclic is the top**: a bearing measured from the
-frame/page direction has a true zero (the reference direction) and its angle-magnitude carries
-proportion, so an angle can carry ratio (a dial/radial encoding), interval, and order. Thus
-sales (ratio) is commensurable with the 15 ratio + 5 cyclic = **20** measurements; order (ordinal)
-with **all 26**.
+Legality is **`type(data) ≤ stamp(measurement)`** (read a stamp down, never up), over the
+v2 reads-down order:
 
-- **Comprehensive scoring (default):** each data relation is scored against **all** its commensurable
-  measurements, like-with-like, and the results are summed **per-relation-normalized** (each relation's
-  raw sum ÷ its attainable max, so the relations compete evenly while, within a relation, matching more
-  measurements still wins). The diagram is a good homomorphism when *many* geometric relations track the
-  data at once; diagram kinds emerge as the configurations that satisfy the most of the matrix. (E.g.
-  driving length, run, rise, and their frame twins to all track value at once *forces the segments
-  parallel* — a common orientation emerges from the score itself, no penalty required.)
-- **Assignment lenses (optional):** the `fixed` mode collapses each relation to one configured carrier
-  (sales → length, order → x-position — the deterministic bar-chart model); `BestAssignment` argmaxes a
-  single carrier per relation (`argmax_α reward(α)`) — a lens for reading off *which* single encoding a
-  figure most resembles (radial via `magnitude`, dot/lollipop via `proj⊥`). Both are pluggable behind
-  one interface but are not the default objective.
+```
+ordinal ≤ interval ≤ ratio        (the linear chain)
+ordinal ≤ cyclic                  (and NOTHING else is ≤ cyclic)
+```
 
-## 8. The penalty book (deferred, but architected in now)
+**Cyclic is demoted** from the v1 top. The v1 argument (a bearing has a true zero — the
+reference direction — so an angle can carry ratio) was confirmed unsound *as implemented*:
+raw atan2 bearings fed into linear statistics hit branch-cut cliffs (a 0.002 rad rotation
+dropped a carrier's reward 5.56 → 0.84), dead zones, and score mirrored dials ≈ 0. Bearings
+may still carry **order** — the intent of the user's "order readable from angles" choice is
+kept — but not interval/ratio until genuine circular rung forms (branch-free circular
+statistics) exist: a **registered open question**. Even ordinal-from-bearings retains the
+branch cut, a documented known limitation. Net commensurability: sales (ratio) → the 15
+ratio cells (**12 distinct carriers**); order (ordinal) → all 26 (**16 distinct**).
 
-Total score is `S = reward(assignment) − Σ penalties`. Penalties are **first-class,
-registered terms with configurable weights defaulting to 0** — sewn in at the deepest
-level per Principle I, even while switched off.
+**Comprehensive scoring (default)** — per data relation R, over the distinct carriers m
+commensurable with it (cells q from §6):
 
-- **Spuriousness / overencoding:** structure the figure asserts beyond the data — e.g.
-  equal spacing read as interval on ordinal labels; any unassigned measurement that varies
-  with visible pattern. This is the counterpart to the ladder: the ladder rewards capture,
-  this punishes fabrication. Keep on separate books.
-- **Frozen degrees of freedom:** measurements assigned no datum (baseline height, tilt)
-  should carry no across-line variance. Penalize `Var(baseline) + circularVar(tilt)`.
-  Driving these to zero installs the shared baseline / common orientation *without*
-  hard-coding "bar chart," and upgrades length-comparison into position-on-a-common-scale.
-- **Economy:** penalize count of posited frames and active measurements (Occam pressure).
+```
+cell         q_m(R) = s(c_m) · Σ_rungs w_r · F_r(c_m, v_R) / maxRung(R)    ∈ [0,1]
+relation(R)         = (1/β) · log( mean_m exp(β · q_m(R)) )                 ∈ [0,1]   (LSE, β ≈ 10)
+reward              = Σ_R relation(R)          quality = reward / #relations
+```
+
+The within-relation aggregation is a **log-sum-exp smooth-max**, not a sum. The mean-form
+LSE lies in `[min q, max q]` and is strictly increasing in every `q_m` (β→∞ hard max,
+β→0 plain mean). Its semantics:
+
+- **One perfect carrier dominates its relation** (relation ≈ max_m q_m): a clean encoding
+  is no longer diluted by the mediocrity of the other carriers.
+- **Every additional matching carrier still strictly raises the relation** — the user's
+  "more matches wins" choice is preserved as a strict-monotone *bonus*, no longer as a
+  linear trade against perfection. Diagram kinds still emerge as configurations satisfying
+  much of the matrix (e.g. length, run, rise all tracking value forces segments parallel).
+- **Division of labor becomes an optimum.** Under the v1 linear sum, compromise frontiers
+  at the ordinal/interval rungs summed to exact constants, and sales outbid order on every
+  shared carrier (marginal 0.041 vs 0.019 per carrier) — the optimum assigned order ZERO
+  carriers, and hand-built "everything ∝ value" mush outscored the perfect bar chart
+  1.40 to 1.17. Under LSE each relation is satisfied by its best carriers, and carriers the
+  other relation needs are cheap to cede.
+
+Each relation's value is already normalized to [0,1] (cells ÷ maxRung; LSE ≤ max ≤ 1), so
+the relations compete evenly regardless of rung count — the per-relation normalization the
+user chose survives unchanged.
+
+- **Assignment lenses (optional):** the `fixed` mode collapses each relation to one
+  configured carrier (sales → length, order → x-position — the deterministic bar-chart
+  model), scored with the **same v2 ladder** (salience gate + symmetric rungs; the LSE of a
+  single cell is that cell), so fixed and comprehensive scores stay comparable.
+  `BestAssignment` argmaxes a single carrier per relation (`argmax_α reward(α)`) — a lens
+  for reading off *which* single encoding a figure most resembles (radial via `magnitude`,
+  dot/lollipop via `proj⊥`). Both are pluggable behind one interface but are not the
+  default objective.
+
+## 8. The penalty book — data-ink
+
+Total score is `S = reward − Σ penalties`. Penalties are **first-class, registered terms
+with configurable weights** — sewn in at the deepest level per Principle I, even when off.
+
+**Spuriousness = data-ink (ON by default, w = 0.25).** The v2 redesign gave this term its
+exact semantics: **salient variation that carries no data relation is fabricated
+structure** — ink the reader will try to decode and find nothing in. Per distinct carrier m:
+
+```
+penalty = w_ink · mean_m [ s(c_m) · (1 − smoothmax_R q_m(R)) ]
+```
+
+where `smoothmax` is the same mean-form LSE as §7 (β from `config.aggregation`; mean-form
+keeps smoothmax ≤ max ≤ 1, so every term is ≥ 0), and m ranges over the **full distinct
+carrier set in every scoring mode** — in `fixed` mode the unassigned carriers still pay for
+salient meaningless variation. A quiet carrier (s ≈ 0) or one that carries some relation
+well (max_R q ≈ 1) costs nothing. This is the counterpart to the ladder: the ladder rewards
+capture, this punishes fabrication — on separate books.
+
+This one term supplies the grounding, parallelism, and quiet-unassigned-DOF pressure the
+audit found missing: with all penalties at 0, even numerically perfect fixed-mode encodings
+rendered as pick-up-sticks, and v1's reward structure actively *resisted* grounding (a
+frozen carrier was lost mean-reward). No chart form is hard-coded — bars, dots, and dials
+all quiet their meaningless variation.
+
+- **Frozen degrees of freedom** (`frozenDof`: `Var(baseline) + circularVar(tilt)`) and
+  **economy** (count of posited frames / active measurements, Occam pressure) **stay
+  registered at weight 0**. Much of frozenDof's intended effect (shared baseline, common
+  orientation) now arrives via data-ink plus the matrix itself; both terms remain fully
+  wired for future use.
 
 ## 9. Optimization
 
@@ -210,10 +355,14 @@ level per Principle I, even while switched off.
   in real time. The giant-tensor regime never appears at this scale.
 - **Hybrid search (matches the landscape):** the objective is non-convex.
   - *Gradient descent (Adam)* does the smooth local polishing of lengths and positions,
-    where it has strong signal (the ratio and frozen-DOF terms).
+    where it has strong signal (the ratio rung, salience, and the data-ink term).
   - *Evolution / random restarts* handles global structure and discrete choices — the
     assignment, and getting the ordering right — because the ordinal term is flat inside a
-    correct ordering (it vetoes inversions, it does not pull).
+    correct ordering (it vetoes inversions, it does not pull). v2 (user directive "let each
+    evolution play out"): the outer layer is a **multi-start pool of independently
+    played-out trajectories** — each with its own Adam state, anneal clock, and plateau
+    detector; a plateaued trajectory freezes as an endpoint, its slot restarts, and the
+    answer is the best endpoint. No mid-run adoption or culling.
 - **Invariances → the optimum is a valley, not a point:** the score is invariant to
   overall scale `k` and horizontal translation/spacing, so many equivalent bar charts tie.
   This is correct and must be respected by convergence detection (detect score plateau,
@@ -226,3 +375,8 @@ charts (up to the known invariances), the fidelity breakdown reads sensibly (sal
 climbs all three rungs, order carrier tops its one rung), and every invariant in
 `ARCHITECTURE.md §Verification` holds under adversarial tests. Then: turn on the first
 penalty term; then BestAssignment; then weight calibration.
+
+*(Historical note: v1 was reached, then the 87-agent adversarial audit showed its
+comprehensive objective's optimum was illegible; §§5–8 above are the v2 math that replaced
+it. The v2 "done" criterion is the acceptance-gate workflow in
+`ARCHITECTURE.md §Verification` — `npm run accept`.)*

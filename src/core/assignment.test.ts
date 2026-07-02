@@ -19,21 +19,20 @@ import { config } from '../config';
 const data = wellSeparatedData();
 const golden = goldenBarChart(data);
 
-describe('assignment: legal candidates (commensurability dataType ≤ stamp)', () => {
+describe('assignment: legal candidates (commensurability dataType ≤ stamp, v2 census)', () => {
   const [sales, order] = dataRelations(data);
-  it('sales (ratio) → the 15 ratio + 5 cyclic = 20 measurements (a bearing carries ratio)', () => {
+  it('sales (ratio) → exactly the 15 ratio measurements pre-dedup (v2: cyclic demoted, 20 → 15)', () => {
     const c = legalCandidates(sales!, REGISTRY);
-    expect(c.length).toBe(20);
-    expect(c.filter((m) => m.stamp === ScaleType.Ratio).length).toBe(15);
-    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5);
-    expect(c.every((m) => m.stamp === ScaleType.Ratio || m.stamp === ScaleType.Cyclic)).toBe(true);
+    expect(c.length).toBe(15);
+    expect(c.every((m) => m.stamp === ScaleType.Ratio)).toBe(true);
+    expect(c.some((m) => m.stamp === ScaleType.Cyclic)).toBe(false); // no ratio-from-bearing
   });
   it('order (ordinal) → all 26 measurements (interval ∪ ratio ∪ cyclic; order readable from angles)', () => {
     const c = legalCandidates(order!, REGISTRY);
     expect(c.length).toBe(26);
     expect(c.filter((m) => m.stamp === ScaleType.Interval).length).toBe(6);
     expect(c.filter((m) => m.stamp === ScaleType.Ratio).length).toBe(15);
-    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5); // angles now carry order
+    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5); // angles carry order
   });
 });
 

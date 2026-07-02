@@ -26,11 +26,53 @@ export const config = {
 
   // ── Ladder surrogate parameters ──────────────────────────────────────────
   // T: dimensionless logistic temperature for the differentiable F_ord surrogate. The margin is
-  // normalized by spread(c), so T is scale-free (→ exact F_ord as T→0). This is the FINAL (annealed-to)
-  // temperature; the optimizer anneals T from anneal.tStart down to this value (see below).
+  // normalized by spread(c) (floored at the legibility scale, see `legibility`), so T is scale-free
+  // (→ exact F_ord as T→0). This is the FINAL (annealed-to) temperature; the optimizer anneals T
+  // from anneal.tStart down to this value (see below).
   T: 0.1,
-  // σ₀² in F_ratio = exp(−Var(log c − log v)/σ₀²).
+  // σ₀² in F_ratio = exp(−Var(log|c| − log v)/σ₀²) · coh(c) (v2 signed-safe form, CONCEPT §6).
   sigma0Sq: 1.0,
+
+  // ── v2 aggregation: within-relation smooth-max (CONCEPT §6, scoring-v2 design) ──
+  aggregation: {
+    // β: LSE sharpness in relation(R) = (1/β)·log(mean_m exp(β·q_m)). One excellent carrier
+    // dominates the relation; every additional matching carrier still STRICTLY raises it (the
+    // "more matches wins" bonus is monotone, no longer a linear trade against perfection).
+    // β→∞ = hard max, β→0 = plain mean. Also the data-ink penalty's smoothmax temperature.
+    beta: 10,
+  },
+
+  // ── v2 salience: the reader-resolution gate (CONCEPT §6; home of the Cleveland–McGill anchor) ──
+  salience: {
+    // s(c) = Var(c)/(Var(c)+θ²), θ per unit class. A carrier whose spread is below the reader's
+    // resolution θ is illegible: its cells earn ~0 reward and salient-but-meaningless variation
+    // is what the data-ink penalty charges for. θ_len is in page units, θ_ang in radians.
+    thetaLen: 10,
+    thetaAngle: 0.35,
+  },
+
+  // ── v2 legibility floor for the ordinal surrogate margin (CONCEPT §6) ─────
+  legibility: {
+    // fOrd's margin denominator is T·max(spread(c), floor). The floor (per unit class of the
+    // carrier) kills the 1/spread gradient explosion on near-constant carriers AND closes the
+    // sub-pixel-order loophole: order compressed below the legibility scale reads as ties.
+    spreadFloorLen: 2, // page units, for position/length carriers
+    spreadFloorAngle: 0.05, // radians, for angle carriers
+  },
+
+  // ── v2.1 signed-ratio coherence (CONCEPT §6; scoring-v2 review fix) ───────
+  ratioSign: {
+    // coh(c) = |2·mean_i σ(cᵢ/(κ·ŝ·vᵢ))−1| / tanh(1/(2κ)), ŝ = exp(mean(log|c|−log v)): magnitude
+    // carries proportion, but a COHERENT sign (either sign — mirrored encodings are legible) is
+    // required for ratio credit. Each entry's sign test is normalized by its own v-IMPLIED magnitude
+    // κ·ŝ·vᵢ, and the ceiling tanh(1/(2κ)) is divided out, so F_ratio = 1 EXACTLY at c = ±k·v and
+    // proportionality is a stationary point (the earlier spread-relative test scored small-but-
+    // legitimate entries as sign-incoherent, capping perfect carriers at ~0.68 on real data and
+    // making a power-law warp the optimum). κ is the fraction of the implied magnitude at which an
+    // entry counts as decisively signed — a SHARP sign test, not a magnitude tolerance. Keep
+    // κ ≲ 0.32 (n=12): the ceiling derivation needs σ(1/κ) ≥ 1 − 1/(2n) (see ladder.cohCeil).
+    kappa: 0.2,
+  },
 
   // ── Ordinal temperature annealing (CONCEPT §9: evolution/GD for global ordering) ──
   // Early in a run a LARGE temperature keeps every pair in the sigmoid's responsive region, giving a
@@ -52,19 +94,37 @@ export const config = {
     // Floor on squared segment length: magnitude = sqrt(dx²+dy²+length). Turns the zero-length
     // cusp into a finite value (log stays finite in F_ratio) so a collapsed segment can never make
     // the reward/gradient NaN and poison the whole optimizer. Tiny ⇒ negligible for real segments.
+    // ALSO the magnitude floor inside F_ratio v2: |cᵢ| = sqrt(cᵢ²+ε) keeps log|c| finite at c=0.
     length: 1e-9,
-    // Positivity floor for the ratio rung: F_ratio uses log(max(c, ratioPos)). Ratio-comparable SIGNED
-    // measurements (run, rise, projections, and bearings) can be ≤0; flooring keeps log finite so a
-    // non-positive carrier scores LOW fidelity (can't be a positive multiple of positive data), not NaN.
-    ratioPos: 1e-6,
+    // Smoothing of |x| as sqrt(x²+ε) in τ_sym and coh(c): keeps the direction-symmetric fidelities
+    // differentiable at their fold (x=0, i.e. chance level). sqrt(ε)=1e-6 is the value at the fold.
+    absSmooth: 1e-12,
+    // Additive guard on the coh(c) sign-test denominator κ·spread(c): keeps cᵢ/(κ·spread+ε) finite
+    // for an exactly-constant carrier (σ(0)=½ each ⇒ coh≈0: a degenerate carrier earns NO ratio credit).
+    sigDenom: 1e-9,
+    // Tolerance for the STRUCTURAL geometry tests in the carrier dedup (frame ∥ page? origin at 0?).
+    // These are exact identities of the configured geometry, so the tolerance is machine-scale.
+    geom: 1e-12,
   },
 
-  // ── Penalty weights (CONCEPT §8) — FIRST-CLASS, DEFAULT 0 (wired, off) ────
-  // Sewn in at the deepest level per Principle I; enabling a weight has effect with no code change.
+  // ── Penalty weights (CONCEPT §8) ──────────────────────────────────────────
+  // Sewn in at the deepest level per Principle I; changing a weight has effect with no code change.
   penalties: {
-    spuriousness: 0.0, // overencoding: structure asserted beyond the data
-    frozenDof: 0.0, // Var(baseline) + circularVar(tilt): unassigned DOF should not vary
-    economy: 0.0, // count of posited frames / active measurements (Occam pressure)
+    // DATA-INK (v2 SEMANTICS — this term was repurposed from "overencoding" by the scoring-v2
+    // redesign): salient variation that carries NO data relation is fabricated structure.
+    //   penalty = w · mean_m [ s_m · (1 − smoothmax_R q_m(R)) ]
+    // over the distinct carriers m, with the same LSE smoothmax temperature as `aggregation.beta`.
+    // ON by default: it supplies the grounding / parallelism / quiet-unassigned-DOF pressure the
+    // audit found missing, without hard-coding any chart form.
+    // 0.25 → 0.5 (acceptance tuning, 2026-07-01): at 0.25 half the session seeds settled in a
+    // "double-ray" basin (starts on an origin ray ∝ rank, ends on a ray ∝ value, angles scattered —
+    // division of labor perfect but ungrounded/unparallel). The two basins are score-equivalent at
+    // their endpoints under every admissible knob, so the ink weight works through the DYNAMICS:
+    // from a random init a stronger ink term quiets meaningless variation (angles, stray lengths)
+    // before the relations pick carriers, biasing basin selection toward grounded/parallel figures.
+    spuriousness: 0.5,
+    frozenDof: 0.0, // Var(baseline) + circularVar(tilt): unassigned DOF should not vary (registered, off)
+    economy: 0.0, // count of posited frames / active measurements (Occam pressure; registered, off)
   },
 
   // ── Optimizer: Adam hyperparameters (CONCEPT §9) ─────────────────────────
@@ -76,6 +136,9 @@ export const config = {
   },
 
   // ── Evolution / random-restart outer layer (CONCEPT §9) ──────────────────
+  // NOTE (scoring-v2 design): the optimizer-v2 pass replaces champion adoption with independent
+  // played-out trajectories; `adoptMargin` is DEPRECATED and kept only until src/optim is rebuilt.
+  // These knobs are owned by the optimizer pass — the scoring pass leaves them untouched.
   evolve: {
     populationSize: 4, // 1 displayed champion + (N−1) exploring members (comprehensive score is heavy)
     mutationSigma: 0.2, // gaussian perturbation scale for restart/mutation
@@ -93,7 +156,7 @@ export const config = {
   // The optimum is a valley (scale/translation invariant) so params drift forever;
   // we watch the score window's spread instead.
   converge: {
-    windowSize: 50,
+    windowSize: 80, // v2: longer window — the LSE objective's plateaus are slower/noisier than v1's sums
     plateauEps: 1e-4, // absolute: max(window) − min(window) below this ⇒ plateau (near-zero scores)
     plateauRelEps: 3e-4, // relative: spread / |mean| below this ⇒ plateau (adapts to the score scale)
     minSteps: 100, // never declare convergence before this

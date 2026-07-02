@@ -5,44 +5,86 @@ the same session that work happens. Never reconstruct state that belongs here.
 
 ---
 
-## Status: ✅ v1 (M0–M7) + refinements + COMPREHENSIVE-SCORING refactor. 136 tests green.
+## Status: ✅ v2 — audit-driven redesign of the objective, optimizer, and UI (2026-07-01). Gates: `npm run check` + `npm run accept`.
 
-### Comprehensive matrix score (user redirection, 2026-07-01)
-The score no longer collapses to one carrier per relation — it is the **full commensurable matrix**,
-per-relation-normalized (user's choices: *sum within a relation → more matches wins*; *order readable
-from angles → cyclic on top*; *normalize per relation* to balance; *frame stays at page origin*).
-- **scale.ts:** reads-down chain is now `ordinal ≤ interval ≤ ratio ≤ cyclic` (cyclic TOP — a bearing
-  from the reference carries ratio+order). sales→20 measurements (15 ratio+5 cyclic), order→all 26.
-- **ladder fRatio:** positivity floor `log(max(c, eps.ratioPos))` (new `maxConst` primitive, gradchecked)
-  so signed carriers (run/rise/projections/bearings) score without NaN.
-- **score.ts:** comprehensive (default) = Σ_relations (Σ_measurements rewardValue)/relMax; `fixed` mode
-  kept as a swappable single-carrier option. `Breakdown`→`relations[]` w/ per-measurement fidelities +
-  `normalized`. gradient/session drop the single-carrier map; scorePanel shows the matrix + top carriers.
-- **converge:** RELATIVE plateau (score is now O(1) normalized); `populationSize 8→4`, `stepsPerFrame 20→4`
-  (matrix ≈ 15k autograd nodes/eval, ~10× heavier).
-- **Result:** value encoded richly (several ratios track it) AND order encodes (best carrier ~0.97);
-  emergent common orientation (parallel segments) arises from the matrix, not a penalty. quality ~65–70%.
-  **Known:** ~10× slower than fixed mode — optimize later if needed. CONCEPT §4 funnel + §7 updated.
+CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
+(`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
-### Post-v1 refinements (user review, 2026-07-01)
-1. **Score monotonicity confirmed + tested.** Both data relations (order + value) are scored and additive:
-   both-match=8.0 > value-only(scrambled x)=7.59 > order-only(flat heights)=2.01. Test in `score.test.ts`.
-   NOTE for the user: because ordinal data earns 1 rung and ratio data 3 (CONCEPT §6), the order dimension
-   is only 1/8 of the max — a positionally-scrambled figure still scores ~95%. Weights are yours to tune
-   (config.weights); principled calibration is M10.
-2. **Posited frame drawn.** `canvas.ts` renders the frame origin + ∥/⊥ axes (dashed, labelled "frame O").
-   Inert in v1 (page-anchored carriers) but now explicit; load-bearing at M8/M9.
-3. **Score panel clarified.** Header "homomorphism of ⟨order × value⟩", "total / maxReward", and a
-   "both data relations compared, like-with-like" subtitle above the two comparison blocks.
-4. **"Weird resets" fixed.** Root cause: the display followed `bestMember`, which jumped between
-   population members (esp. restart/mutation members overtaking near convergence). Fix: the displayed
-   figure is now a PROTECTED CHAMPION (member 0, a smooth gradient trajectory); explorers search, and the
-   champion only ADOPTS an explorer's figure when it beats it by `evolve.adoptMargin` (0.05) — a deliberate
-   jump, not flicker. Result: display jumps 3→2 (both early), no late resets; bench mean quality 0.999→1.000,
-   mean steps 3249→2692. Finding: the annealed surrogate makes a single trajectory converge on ~5/6 seeds;
-   the population now only rescues the occasional hard seed via adoption.
+### The audit (2026-07-01)
+An 87-agent adversarial audit (every finding confirmed by ≥2/3 independent verifiers with numeric
+reproductions; ~110 scripts preserved in `scratch/` — reuse as probes, never modify) proved the v1
+comprehensive OBJECTIVE preferred illegible figures while the optimizer was sound: hand-built
+"everything ∝ value" mush outscored perfect bars 1.40 vs 1.17/2.0 and Adam walked AWAY from perfect
+bars; the linear sum had zero division-of-labor pressure (compromise frontiers summed to constants;
+sales outbid order on every carrier, marginal 0.041 vs 0.019 → the optimum gave order ZERO
+carriers); fidelity was resolution-free (a certified τ=0.97 order carrier spanned 21 units under
+109-unit segments); fOrd's 1/spread normalization exploded gradients ~1e8× on flat carriers;
+fRatio's positivity clamp paid all-negative carriers a free, gradient-dead ≈0.18 (15/20 sales
+carriers signed); r²'s sign-blindness broke rung nesting (anti-plateaus); cyclic-on-top hit
+branch-cut cliffs (reward 5.56→0.84 for a 0.002 rad rotation); 10 of 26 measurements were exact
+duplicates (16 distinct; 16 projection rows of rank 4); hidden chance floors made random figures
+read ~33% quality / order ~50%; all penalties were weight-0 (pick-up-sticks optima); and the evolve
+machinery was dead (adoptMargin never fired, mutation branch dead at pop 4, restart knobs inert).
 
-_Run scope (user-chosen 2026-07-01): build through **M7** (v1), full autonomy. Stop before M8–M10._
+### Scoring v2 (v2.1) — shipped
+The redesigned objective per the spec, with the one confirmed review blocker fixed (v2.1):
+- **Rungs — chance-corrected, direction-symmetric** (a reversed axis / mirrored encoding is
+  legible). Ordinal = τ_sym = smooth |2·F_ord−1| with the surrogate margin floored at the
+  legibility scale per unit class (kills the 1e8 explosion AND the sub-pixel loophole — sub-legible
+  order reads as ties); interval = r² (chance 1/(n−1)≈0.09 accepted, documented); ratio =
+  signed-safe `base·coh`. **v2.1 blocker fix (ladder.ts):** the sign test is normalized per entry
+  by the v-implied magnitude κ·ŝ·vᵢ and the derived ceiling tanh(1/(2κ)), so **F_ratio = 1 exactly
+  iff c = ±k·v** and proportionality is a stationary point of coh — the spec's spread-relative test
+  capped perfect carriers at ~0.68 and made a power-law warp (c ∝ v^0.78) the optimum. Regression:
+  golden bars stay bars (r²(len,v)=0.9995 @ step 2000, gate ≥0.999); F ≤ 1 on 20k random signed
+  vectors; ordinal corrective-gradient invariants re-added under τ_sym semantics (incl. the fold
+  behavior: mostly-descending carriers push toward FULL reversal).
+- **Salience gate** s = Var/(Var+θ²) per unit class — the reader model; the principled home of the
+  M10 Cleveland–McGill anchor (calibrate θ per reading class, don't hand-tune weights).
+- **LSE aggregation** (β=10) within each relation over the deduped carriers; reward = Σ_R LSE;
+  quality = reward/#relations, ≈0 for random figures (chance floors removed at the source).
+- **Data-ink penalty** (`spuriousness`, ON at 0.25): mean_m s_m·(1−smoothmax_R q_m) over the FULL
+  distinct carrier set in BOTH modes — fixed-mode unassigned carriers pay too (adversarial test:
+  fixed-mode pick-up-sticks with identical assigned carriers pays strictly more ink).
+  `frozenDof`/`economy` stay registered at 0.
+- **carriers(cfg) structural dedup:** 26 census cells → **16 distinct** (12 ratio + 4 cyclic) under
+  the v1 geometry; sales→12, order→16; merged cells keep the max stamp + alias list; the rules are
+  structural, so they survive frame movement (M8+). Plain-English labels everywhere
+  (`start x`, `run`, `length`, `fr·mid dist`, …).
+- **Cyclic demoted:** reads-down is `ordinal ≤ interval ≤ ratio` and `ordinal ≤ cyclic` ONLY;
+  interval/ratio-from-bearings OFF until genuine circular rung forms exist (registered open
+  question); the branch cut on ordinal-from-bearings is a documented limitation.
+- `fixed` mode kept on the same v2 ladder for comparability. New config: `aggregation.beta`,
+  `salience.thetaLen/thetaAngle`, `legibility.spreadFloorLen/Angle`, `ratioSign.kappa`,
+  `penalties.spuriousness=0.25`, `converge.windowSize 50→80`.
+- **Verified (scoring pass):** `npm run check` fully green (176 tests), gradcheck green,
+  `npm run accept` 25/25 (+12/12 numeric with `--sessions`). Also fixed: vitest worker starvation
+  (the long synchronous session test now yields every 200 steps — same trajectory, RNG untouched).
+
+### Optimizer v2 — shipped (user directive: "let each evolution play out")
+Multi-start, **no adoption, no mid-run culling**: `populationSize` independent trajectories, each
+with its own Adam state, anneal clock, and plateau detector; a trajectory that plateaus (or hits
+its per-trajectory cap) FREEZES as an endpoint; freed slots start replacements — alternating
+fresh-random / mutation-of-best-endpoint (`evolve.mutateFraction`) — until `maxRestarts` is
+exhausted; session result = best endpoint by exact score. Replaces (not tunes) the audit's dead
+machinery: `adoptMargin` dropped, mutation branch live, restart knobs real. Gate 5 of
+`npm run accept -- --sessions` (seeds 1..6: salient τ_sym ≥ 0.9 for order AND salient ratio ≥ 0.9
+for sales, legible dumps) is owned by this pass.
+
+### UI v2 — shipped
+Plain-English measurement labels; per-carrier rows with per-rung mini-bars (τ signed ↑/↓, r²,
+ratio) + a salience chip; distinct-carrier counts; data-ink penalty row; honest headline
+(quality ≈ 0 for random figures); **fixed viewport** (page box + margin, no per-frame refit — the
+frame stops "moving"); `byCap` shown live; **trajectory strip** (every trajectory watchable as it
+plays out; the main canvas follows the best).
+
+### Softened prior user choices (flagged, not silently dropped)
+1. **"Sum within a relation" → LSE.** The monotone more-matches bonus is kept; the linear trade is
+   removed (confirmed root cause of the mush optimum).
+2. **"Order readable from angles / cyclic on top" → ordinal ≤ cyclic only.** The intent (bearings
+   carry order) is kept; the unsound ratio-from-raw-bearing edge is removed until circular rung
+   forms exist.
+Choices (3) *per-relation normalization* and (4) *frame fixed at the page origin* remain in force.
 
 ## Milestone plan
 
@@ -88,10 +130,17 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       scorePanel,controls,app}`, `main.ts`, `index.html` (dark theme), `persistence/store.ts`.
       **Preview-verified:** seed 1 evolved 37%→100% quality (sales all 3 rungs=1, order F_ord=1),
       Save enabled on convergence, Save→Load round-trips, new seed resets, zero console errors.
-- [ ] **M8 — First penalty on.** Enable `frozenDof`; confirm it installs shared baseline.
+- [x] **v2 — scoring + optimizer + UI redesign (2026-07-01).** Audit → spec → shipped (see
+      Status). Gate: the 6 adversarial acceptance gates in `scripts/accept.ts`
+      (`npm run accept`; catalogued in ARCHITECTURE §Verification) + `npm run check`.
+- [ ] **M8 — Frame movement.** Optimize the posited frame's origin/direction (the carrier
+      dedup is already structural, so scoring stays correct as cells un-merge); revisit
+      `frozenDof`/`economy` semantics once frames move.
 - [ ] **M9 — BestAssignment (invention mode).** argmax over legal assignments; confirm
       radial/dot encodings emerge for suitable configs.
-- [ ] **M10 — Weight calibration.** Anchor `w_ord/w_int/w_ratio` to Cleveland–McGill.
+- [ ] **M10 — Calibration.** Measure the salience resolutions θ per reading class against
+      Cleveland–McGill decodability (the gate is the anchor's principled home, CONCEPT §6);
+      re-examine `w_ord/w_int/w_ratio`.
 
 ## Done this project
 - **M0 (2026-07-01):** Project scaffolding (Vite/TS/Vitest/ESLint), `package.json` with the six
@@ -145,31 +194,41 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - **Baked-in v1 decisions** (from the approved plan): posited frame FIXED (∥ page) in v1;
   FixedAssignment sales→length (#9, no frame), order→x-position (#1); weights w_ord=1<w_int=2<w_ratio=4;
   one differentiable code path (plain-number path only for display; sole value-fork is exact F_ord).
+- **Scoring v2 (2026-07-01, audit-driven; supersedes the linear comprehensive sum):** within-relation
+  LSE smooth-max (more-matches as a strict-monotone bonus, never a linear trade); salience gate as
+  the reader model; chance-corrected direction-symmetric rungs (τ_sym; signed-safe base·coh ratio
+  with the v2.1 per-entry v-implied sign normalization); data-ink penalty ON over the deduped
+  carrier set; structural carrier dedup (16 distinct under v1 geometry); cyclic demoted to
+  ordinal-only. Legibility enters ONLY through the salience gate and the surrogate's spread floor —
+  the fidelities themselves stay scale-invariant. Optimizer: champion adoption replaced by
+  independent played-out trajectories (frozen endpoints; best endpoint wins).
 
 ## Open questions
-- Weight calibration units (`F_int` r² vs `F_ratio` exp-of-variance) — deferred to M10.
-- Whether the posited frame's own origin/direction should be optimized or fixed in v1.
-  Lean: fixed in M4–M7, optimizable later.
+- **Circular rung forms.** Branch-free circular statistics (circular correlation/variance) so
+  bearings can soundly carry interval/ratio again; until then interval/ratio-from-bearings is OFF
+  and even ordinal-from-bearings keeps the branch-cut limitation (registered by the v2 redesign).
+- **Calibration (M10).** Measure salience θ per reading class (Cleveland–McGill); the
+  `w_int` (r²) vs `w_ratio` (exp-of-variance) unit mismatch also remains.
+- **Frame movement (M8).** Optimize the posited frame's origin/direction; the dedup layer is
+  ready, but converge/economy semantics with moving frames are not designed yet.
 - BestAssignment cost when argmax runs every step — may need caching (revisit at M9).
+- LSE β (10) and data-ink weight (0.25) are chosen, not derived — sensitivity unexplored.
 
 ## Next action
-**Working state:** M0–M7 + comprehensive matrix scoring (default) are done and verified.
-`npm run check` = **136 tests green**; `npm run dev` → live GUI at :5173; `npm run gradcheck` trusts the AD
-engine; `npm run bench` reports comprehensive convergence (slow: ~40–90 s/seed). See the Status section
-(top) for the comprehensive-scoring details and the four user choices that shaped it.
+**Working state:** v2 shipped end-to-end — scoring v2.1, optimizer v2 (played-out trajectories),
+UI v2 (trajectory strip, fixed viewport). See Status (top) for verified numbers. Workflows:
+`npm run check` (typecheck+lint+tests) · `npm run accept` (the 6 adversarial gates; add
+`-- --sessions` for gate 5) · `npm run gradcheck` · `npm run bench` · `npm run dev` (GUI at :5173).
 
-Most likely next step, and open menu (user's call which):
-- **Performance (flagged by the user).** The comprehensive score is ~10× heavier (~15k scalar-autograd
-  nodes/eval) → GUI ~10–15 fps, bench slow. Optimize the hot path: reuse each measurement's `extractValue`
-  across both relations (currently re-extracted), cut redundant work in the 46 `fOrd` × 66-pair loops
-  (biggest cost), or cache the graph structure. Self-contained; gate: bench wall-time ↓ with tests still green.
-- **Emergent diagram kinds.** The comprehensive optimum already shows a value-proportional parallel plot +
-  order via position. Explore what other seeds/data produce; wire the `BestAssignment` "which single kind
-  is this?" readout into the panel (policy already built).
-- **Penalty semantics under comprehensive.** `frozenDof`'s common-orientation effect now partly EMERGES
-  from the matrix (parallel segments); re-think what `spuriousness`/`economy` should mean when every
-  commensurable measurement is already scored. (All three still wired at weight 0.)
-- **Weight calibration (M10).** Anchor `w_ord/w_int/w_ratio` to Cleveland–McGill (flagged open problem).
+Open menu (user's call which):
+- **Circular rung forms** — restore interval/ratio-from-bearings soundly; removes the registered
+  cyclic limitation and re-opens dial/radial encodings to the sales relation.
+- **M8 frame movement** — optimize the posited frame; the structural dedup already supports it.
+- **M10 calibration** — measure salience θ per reading class (the Cleveland–McGill anchor's
+  principled home, CONCEPT §6).
+- **Performance** — the full-matrix objective remains ~10× heavier than fixed mode; reuse
+  extractions / cache graph structure / cut the 66-pair fOrd loops if the GUI or bench needs it.
+  Gate: bench wall-time ↓ with `npm run check` + `npm run accept` still green.
 
-Fixed-mode note: `config.scoring = 'fixed'` restores the earlier single-carrier bar-chart model
-(sales→length, order→x-position), which converges fast to clean bars — kept as a swappable option.
+Fixed-mode note: `config.scoring = 'fixed'` restores the single-carrier bar-chart model
+(sales→length, order→x-position), scored on the SAME v2 ladder — kept as a swappable option.

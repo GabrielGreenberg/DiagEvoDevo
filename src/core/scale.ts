@@ -3,13 +3,14 @@
 // Scale types and the "reads-down" partial order (CONCEPT.md §§3,5,7). Scale type is the payload:
 // every measurement cell is stamped with the structure it can carry, read off its frame.
 //
-// The reads-down order (Stevens' hierarchy, with this project's frame-relative reading of angles):
-//   ordinal ≤ interval ≤ ratio ≤ cyclic   — a total chain, CYCLIC ON TOP.
-// A bearing measured from the frame/page direction has a true zero (the reference direction) and its
-// angle-magnitude carries proportion, so an angle can carry RATIO data (a dial/radial encoding of value);
-// its rank carries ORDER; hence a cyclic measurement is the RICHEST carrier — it can carry ordinal,
-// interval, and ratio data (plus its own wrap). Linear data types can't be read AS cyclic, so nothing is
-// ≤ ordinal below and only cyclic ≤ cyclic at the top.
+// The reads-down order (Stevens' hierarchy; v2 after the scoring-v2 redesign):
+//   ordinal ≤ interval ≤ ratio      (the linear chain)
+//   ordinal ≤ cyclic                (and NOTHING else is ≤ cyclic)
+// A bearing's rank can carry ORDER (a dial's needle positions are readable as a sequence), but the
+// v1 idea that raw atan2 bearings carry interval/ratio was CONFIRMED unsound by the audit: linear
+// stats on raw bearings hit branch-cut cliffs and score mirrored dials ~0. Interval/ratio-from-
+// bearings stays OFF until genuine circular rung forms exist (registered open question). The
+// branch-cut on ordinal-from-bearings remains a documented known limitation.
 //
 // Assignment legality (CONCEPT §7): a measurement with `stamp` can carry `dataType` iff
 // dataType ≤ stamp ("read a stamp down, never up").
@@ -40,13 +41,13 @@ const LEQ: Record<ScaleType, Record<ScaleType, boolean>> = {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: true,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: true, // interval structure fits inside an angle from the reference
+    [ScaleType.Cyclic]: false, // v2: no linear-metric structure read from raw bearings (branch cuts)
   },
   [ScaleType.Ratio]: {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: false,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: true, // a bearing from the origin direction carries ratio (angle-magnitude)
+    [ScaleType.Cyclic]: false, // v2: ratio-from-bearing removed until circular rung forms exist
   },
   [ScaleType.Cyclic]: {
     [ScaleType.Ordinal]: false,
