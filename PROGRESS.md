@@ -24,6 +24,22 @@ seed 2 horizontal ticks (order = end-x, value = end-y); seed 4 grounded near-ver
 total ≈ −0.02), trajectory strip with independent played-out runs (no resets), fixed viewport
 (frame no longer appears to move), plain-English labels, per-rung mini-bars, live max-steps control.
 
+### Near-miss credit + elastic convergence (2026-07-02, user-directed): 49/49, legibility 6/6
+User asked to (a) make convergence strictness hand-editable and (b) stop crushing "almost-perfect"
+readings. Cliff diagnosis (scratch/tune_cliff_probe.ts): the crushed case was OFFSET-LINEAR position
+readings (τ=1, r²=1, yet 2–6% of a perfect carrier's gradient share) — exactly the reading that must
+walk to the baseline to produce doubled-up sales carriers. Knobs (config comments carry the
+perceptual rationale): sigma0Sq 1→2 (reader's proportionality tolerance, Weber home), beta 10→8
+(β=6 REJECTED — fails gate-2 one-perfect-beats-many; documented floor), w_int 2→2.5 (offset-position
+readings are value-decodable per Cleveland–McGill; keeps w_ord<w_int<w_ratio and w_ord+w_int<w_ratio).
+Offset readings now get 13–46% gradient share. Acceptance fixtures made LOUD (golden spacing 10→100).
+Full `npm run accept` at new knobs: **49/49, division of labor 6/6, legible 6/6** (was 5/6); every
+seed now converges to GROUNDED PARALLEL bars/ticks; sales carried by 2–4 salient ≥0.9 readings per
+seed (was ~1) via grounding coincidences. Extent readings (length/rise/run) take order duty in these
+optima; the specific length+position sales pairing hasn't emerged yet — next lever is M8 (free the
+frame), awaiting user green-light. UI: "plateau eps" input (live via session.setPlateauRelEps,
+persisted in prefs like max steps; smaller = stricter = runs continue longer).
+
 ### The audit (2026-07-01)
 An 87-agent adversarial audit (every finding confirmed by ≥2/3 independent verifiers with numeric
 reproductions; ~110 scripts preserved in `scratch/` — reuse as probes, never modify) proved the v1

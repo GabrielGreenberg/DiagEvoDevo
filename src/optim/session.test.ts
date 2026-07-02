@@ -13,6 +13,9 @@
 //     grows (endpoints never vanish, finished views freeze bit-exactly), detail(id) serves any
 //     trajectory ever, and result(id) saves the SELECTED trajectory (result() stays best),
 //   • setMaxSteps: live raise un-caps un-retired trajectories, live lower caps at the next step,
+//   • setPlateauRelEps: live convergence strictness reaches running trajectories' NEXT plateau
+//     check and every future replacement, never retroactively un-converges an endpoint, and
+//     rejects invalid values,
 //   • a real short convergence run under the v2 score reaches DIVISION OF LABOR.
 
 import { describe, it, expect } from 'vitest';
@@ -380,6 +383,80 @@ describe('session: setMaxSteps (live per-trajectory cap)', () => {
     for (const v of s.trajectories()) expect(v.status).toBe('capped');
     s.setMaxSteps(10000); // the per-trajectory cap cannot override the global cap
     expect(s.status).toBe('done');
+  });
+});
+
+// ── setPlateauRelEps: the live convergence strictness ───────────────────────────
+
+describe('session: setPlateauRelEps (live convergence strictness)', () => {
+  // Real scores, rigged STRICTNESS: an astronomically strict eps (1e-30) that no genuine score
+  // window can satisfy, flipped live to an astronomically loose one (1e30) that any full window
+  // satisfies at its next check. plateauEps 0 disables the absolute floor so only the relative
+  // (live-adjustable) criterion decides.
+  const STRICT = 1e-30;
+  const LOOSE = 1e30;
+  const epsCfg = cfgWith({
+    converge: { plateauEps: 0, plateauRelEps: STRICT, windowSize: 10, minSteps: 5 },
+    evolve: { populationSize: 2, maxRestarts: 2 },
+  });
+
+  it('initial strictness comes from config.converge.plateauRelEps', () => {
+    const s = createSession(5, 1);
+    expect(s.plateauRelEps).toBe(config.converge.plateauRelEps);
+    const t = createSession(5, 1, epsCfg);
+    expect(t.plateauRelEps).toBe(STRICT);
+  });
+
+  it(
+    'strict keeps trajectories running; loosening LIVE fires their next check; replacements inherit the live value',
+    { timeout: 60000 },
+    () => {
+      const s = createSession(5, 1, epsCfg);
+      s.run(20);
+      // under the impossible strictness nothing plateaus, even though the window is long full
+      for (const v of s.trajectories()) {
+        expect(v.status).toBe('running');
+        expect(v.steps).toBe(20);
+      }
+      s.setPlateauRelEps(LOOSE);
+      expect(s.plateauRelEps).toBe(LOOSE);
+      s.step(); // the very next check runs under the loose threshold
+      for (const v of s.trajectories()) {
+        expect(v.status).toBe('plateaued'); // a genuine plateau verdict — NOT the step cap
+        expect(v.steps).toBe(21);
+      }
+      // the restart budget (2) now spawns replacements: their FRESH detectors must read the LIVE
+      // eps (loose), not the config default (strict) — so they plateau as soon as their own window
+      // fills (own step 10 = windowSize), and the session plays out to done.
+      s.run(30);
+      expect(s.status).toBe('done');
+      const all = s.allTrajectories();
+      expect(all).toHaveLength(4); // 2 initial + 2 replacements
+      for (const v of all) expect(v.status).toBe('plateaued');
+      const reps = all.filter((v) => v.kind !== 'initial');
+      expect(reps.map((v) => v.steps)).toEqual([10, 10]);
+    },
+  );
+
+  it('lowering eps NEVER retroactively un-converges finished endpoints', { timeout: 60000 }, () => {
+    const s = createSession(5, 1, epsCfg);
+    s.run(20);
+    s.setPlateauRelEps(LOOSE);
+    s.run(); // plays out: initials plateau, replacements spawn + plateau, budget exhausted
+    expect(s.status).toBe('done');
+    const before = s.allTrajectories().map((v) => ({ id: v.id, status: v.status, steps: v.steps }));
+    s.setPlateauRelEps(STRICT); // user demands far stricter convergence AFTER the fact
+    expect(s.status).toBe('done'); // nothing came back to life
+    s.step(); // and stepping a done session stays a no-op
+    const after = s.allTrajectories().map((v) => ({ id: v.id, status: v.status, steps: v.steps }));
+    expect(after).toEqual(before);
+  });
+
+  it('rejects non-finite and non-positive values, keeping the live value unchanged', () => {
+    const s = createSession(5, 1, epsCfg);
+    s.setPlateauRelEps(2e-4);
+    for (const bad of [0, -1e-4, NaN, Infinity, -Infinity]) s.setPlateauRelEps(bad);
+    expect(s.plateauRelEps).toBe(2e-4);
   });
 });
 

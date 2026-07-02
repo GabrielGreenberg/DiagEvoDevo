@@ -46,6 +46,53 @@ describe('converge: does NOT fire on a genuine slow monotone climb (Risk 2 de-ri
   });
 });
 
+describe('converge: plateauRelEps is read PER CHECK (live-adjustable strictness)', () => {
+  // A rigged slow climb: Δ = 1e-5/step at score ≈ 1 ⇒ relative window spread ≈ 9e-5.
+  // plateauEps 0 disables the absolute floor so ONLY the relative criterion is exercised.
+  const slowClimb = (i: number): number => 1 + i * 1e-5;
+  const relCfg = (plateauRelEps: number) => ({ ...cfg, plateauEps: 0, plateauRelEps });
+
+  it('plateaus under a loose eps (1e-2) but NOT under a strict one (1e-5)', () => {
+    const loose = initConvergence();
+    const strict = initConvergence();
+    let looseConv = false;
+    let strictConv = false;
+    for (let i = 0; i < 200; i++) {
+      if (!looseConv) looseConv = pushScore(loose, slowClimb(i), relCfg(1e-2));
+      strictConv = pushScore(strict, slowClimb(i), relCfg(1e-5));
+    }
+    expect(looseConv).toBe(true); // 9e-5 ≤ 1e-2 → flat enough, stop
+    expect(loose.byCap).toBe(false);
+    expect(strictConv).toBe(false); // 9e-5 > 1e-5 → still improving, keep going
+  });
+
+  it('LOOSENING mid-stream fires on the very next check; the same series never fired while strict', () => {
+    const st = initConvergence();
+    let converged = false;
+    for (let i = 0; i < 100; i++) converged = pushScore(st, slowClimb(i), relCfg(1e-5));
+    expect(converged).toBe(false); // strict: the slow climb keeps it alive
+    converged = pushScore(st, slowClimb(100), relCfg(1e-2)); // user raises eps mid-run
+    expect(converged).toBe(true); // next check under the looser threshold fires
+    expect(st.byCap).toBe(false);
+  });
+
+  it('TIGHTENING mid-stream keeps a still-flat-under-loose series running — but never un-converges', () => {
+    const stA = initConvergence();
+    let convA = false;
+    for (let i = 0; i < 100 && !convA; i++) convA = pushScore(stA, slowClimb(i), relCfg(1e-2));
+    expect(convA).toBe(true);
+    // once converged, a stricter cfg cannot un-converge it: pushScore short-circuits on converged
+    expect(pushScore(stA, slowClimb(101), relCfg(1e-12))).toBe(true);
+    expect(stA.converged).toBe(true);
+    // whereas a NOT-yet-converged detector immediately honors the stricter threshold
+    const stB = initConvergence();
+    let convB = false;
+    for (let i = 0; i < 50; i++) convB = pushScore(stB, slowClimb(i), relCfg(1e-5));
+    for (let i = 50; i < 150; i++) convB = pushScore(stB, slowClimb(i), relCfg(1e-6));
+    expect(convB).toBe(false);
+  });
+});
+
 describe('converge: guards', () => {
   it('does not converge before minSteps even if flat', () => {
     const st = initConvergence();

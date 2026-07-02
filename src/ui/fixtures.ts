@@ -35,9 +35,12 @@ export interface FakeSessionOptions {
 export interface FakeSession extends SessionApi {
   /** Test spy: every value passed to setMaxSteps, in order. */
   readonly setMaxStepsCalls: number[];
+  /** Test spy: every value passed to setPlateauRelEps, in order (invalid values included). */
+  readonly setPlateauRelEpsCalls: number[];
   readonly figureSeed: number;
   readonly dataSeed: number;
   maxSteps: number;
+  plateauRelEps: number;
   status: SessionStatus; // mutable here (the fake flips it); readonly through SessionApi
   /** Adversarial control: override a trajectory's exact total (simulates an overtake). */
   forceTotal(id: number, total: number): void;
@@ -117,9 +120,11 @@ export function makeFakeSession(
 
   const self: FakeSession = {
     setMaxStepsCalls: [],
+    setPlateauRelEpsCalls: [],
     figureSeed,
     dataSeed,
     maxSteps: config.converge.maxSteps,
+    plateauRelEps: config.converge.plateauRelEps,
     status: 'running',
 
     step(): void {
@@ -164,6 +169,14 @@ export function makeFakeSession(
       this.setMaxStepsCalls.push(n);
       this.maxSteps = n;
       refresh(); // raising un-caps un-retired occupants, lowering caps — recompute 'done'
+    },
+
+    setPlateauRelEps(x: number): void {
+      this.setPlateauRelEpsCalls.push(x);
+      // contract: reject non-finite / non-positive; the fake's plateaus are staged (plateauAt),
+      // so accepting the value only needs to mirror the real session's validation + storage.
+      if (!Number.isFinite(x) || x <= 0) return;
+      this.plateauRelEps = x;
     },
 
     result(id?: number): SessionResult {

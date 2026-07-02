@@ -12,6 +12,7 @@ const initial = (): AppState => ({
   mode: 'idle',
   tick: 0,
   maxSteps: config.converge.maxSteps,
+  plateauRelEps: config.converge.plateauRelEps,
   selectedId: 0,
   loaded: null,
   saveCount: 0,
@@ -43,10 +44,12 @@ describe('store', () => {
     expect(seen).toBe(1);
   });
 
-  it('maxSteps patch survives unrelated patches (persists across reset flows)', () => {
+  it('maxSteps and plateauRelEps patches survive unrelated patches (persist across reset flows)', () => {
     const store = createStore(initial());
     store.set({ maxSteps: 1234 });
+    store.set({ plateauRelEps: 3e-6 });
     store.set({ mode: 'idle', loaded: null }); // what a Reset/new-seed patch looks like
     expect(store.get().maxSteps).toBe(1234);
+    expect(store.get().plateauRelEps).toBe(3e-6);
   });
 });

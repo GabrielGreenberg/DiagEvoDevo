@@ -20,7 +20,15 @@ export const config = {
   // "more captured structure always scores higher." Asserted by a test.
   weights: {
     w_ord: 1.0,
-    w_int: 2.0,
+    // 2.0 → 2.5 (near-miss softening, 2026-07-02): the interval rung is "value decodable up to an
+    // affine anchor" — exactly what an UNGROUNDED position reading of proportional bars provides
+    // (c = k·v + b scores r² = 1). Cleveland–McGill puts position on a common scale at the TOP of
+    // the perceptual decoding hierarchy, so such readings are genuine value backups for a reader
+    // and deserve more of the ladder than v2 gave them. 2.5 preserves BOTH orderings:
+    // w_ord < w_int < w_ratio (tested invariant) and w_ord + w_int < w_ratio — the ratio rung
+    // still outweighs everything below it combined, so full proportionality stays the dominant
+    // target and an affine near-miss earns (1+2.5)/7.5 = 47% of a cell, not parity.
+    w_int: 2.5,
     w_ratio: 4.0,
   },
 
@@ -31,7 +39,20 @@ export const config = {
   // from anneal.tStart down to this value (see below).
   T: 0.1,
   // σ₀² in F_ratio = exp(−Var(log|c| − log v)/σ₀²) · coh(c) (v2 signed-safe form, CONCEPT §6).
-  sigma0Sq: 1.0,
+  // σ₀ is the reader's PROPORTIONALITY TOLERANCE in log units: how much per-item log-ratio scatter
+  // still reads as "roughly proportional" (the Weber-fraction home — ratio estimation is coarse,
+  // so moderate log-space mismatch is perceptually a near-miss, not a fail).
+  // 1.0 → 2.0 (near-miss softening, 2026-07-02): at 1.0 the grounding-relevant near-miss — an
+  // ungrounded position reading of proportional bars, c = k·v + b, which a reader decodes fully
+  // once the axis is anchored (τ_sym = 1, r² = 1) — kept only 2–6% of a perfect carrier's LSE
+  // gradient share for b = 25–100% of the span (measured, scratch/tune_cliff_probe.ts), so the
+  // ratio-base pull that grounds a baseline onto the frame axis (b → 0) never engaged. At 2.0
+  // (with β = 8 below) those readings retain ~13–46% — material pressure to finish the job —
+  // while true proportionality stays the STRICT optimum (base < 1 whenever Var(d) > 0; the
+  // power-law-warp regression still passes). Offline calibration (scratch/tune_grid.ts): all
+  // gate-1 ranking margins stay ≥ 0.74 for σ₀² ∈ [1,3] (ranking is insensitive here); 2.0 leaves
+  // headroom before random-figure quality drifts against its pinned ceiling (σ₀² ≥ 2.5 does not).
+  sigma0Sq: 2.0,
 
   // ── v2 aggregation: within-relation smooth-max (CONCEPT §6, scoring-v2 design) ──
   aggregation: {
@@ -39,7 +60,14 @@ export const config = {
     // dominates the relation; every additional matching carrier still STRICTLY raises it (the
     // "more matches wins" bonus is monotone, no longer a linear trade against perfection).
     // β→∞ = hard max, β→0 = plain mean. Also the data-ink penalty's smoothmax temperature.
-    beta: 10,
+    // 10 → 8 (near-miss softening, 2026-07-02): β is how winner-take-all the reading competition
+    // is — a carrier's share of the relation's gradient is ≈ e^{β(q − q_max)}, so β sets the
+    // perceptual band of "still in contention". At 10, a near-miss q-gap of 0.35 starves to ~3%;
+    // at 8 it keeps ~6% and the calibrated near-misses (offset-linear/curved/noisy carriers, see
+    // sigma0Sq above) land at 13–46% of a perfect carrier's share. HARD FLOOR: β must keep "one
+    // perfect carrier beats many mediocre ones" (accept gate 2's q = 0.6 cohort): β = 8 passes
+    // with margin 0.09, β = 6 FAILS — do not go below 8 without revisiting that gate's math.
+    beta: 8,
   },
 
   // ── v2 salience: the reader-resolution gate (CONCEPT §6; home of the Cleveland–McGill anchor) ──

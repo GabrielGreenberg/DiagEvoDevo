@@ -73,9 +73,12 @@ const check = (gate: string, name: string, pass: boolean, detail: string): void 
   checks.push({ name: `[gate ${gate}] ${name}`, pass, detail });
 };
 
-const golden = (d: DataSet): Figure => goldenBarChart(d, { k: valueScale(d), spacing: 10, x0: 5 });
+// LOUD golden fixtures (2026-07-02, confirmed finding): spacing 100 puts the x-position ORDER
+// carriers far above the reader-resolution θ_len (salience ≈ 1.0, like every session endpoint's
+// carriers) instead of the 0.92-salient spacing-10 layout — gate comparisons are like-for-like.
+const golden = (d: DataSet): Figure => goldenBarChart(d, { k: valueScale(d), spacing: 100, x0: 5 });
 const mirrored = (d: DataSet): Figure =>
-  goldenBarChart(d, { k: -valueScale(d), spacing: 10, x0: 5 });
+  goldenBarChart(d, { k: -valueScale(d), spacing: 100, x0: 5 });
 const rel = (b: Breakdown, key: 'sales' | 'order'): RelationBreakdown =>
   b.relations.find((r) => r.key === key)!;
 
@@ -91,12 +94,26 @@ interface BestCarrier {
   salience: number;
 }
 
+/** One high-fidelity salient sales reading (the redundancy report; informational, not a gate). */
+interface SalesReading {
+  id: string;
+  label: string;
+  salience: number;
+  ratio: number; // exact ratio-rung fidelity
+  cellF: number; // whole-ladder cell fidelity Σ w_r·F_r / maxRung (un-gated by salience)
+}
+
 interface Characterization {
   grounded: string | null;
   parallel: string | null;
   bestOrder: BestCarrier | null; // best salient carrier's exact τ_sym for the order relation
   bestSales: BestCarrier | null; // best salient carrier's exact ratio fidelity for sales
   divisionOfLabor: boolean;
+  // sales REDUNDANCY (the grounding signature): every salient carrier with cellF ≥ RUNG_TARGET.
+  // A grounded bar chart makes length AND a position reading carry sales simultaneously — the
+  // coincidence that reads as "segments anchored on a frame axis".
+  salesRedundancy: SalesReading[];
+  lenPosPair: boolean; // a length-type AND a position/distance-type reading both ≥ RUNG_TARGET
   loudMeaningless: number;
   ink: number; // weighted data-ink (spuriousness) penalty
   legible: boolean;
@@ -165,6 +182,27 @@ function characterize(figure: Figure, b: Breakdown): Characterization {
   const bestSales = bestSalient(sales, 'ratio');
   const divisionOfLabor = (bestOrder?.f ?? 0) >= RUNG_TARGET && (bestSales?.f ?? 0) >= RUNG_TARGET;
 
+  // sales redundancy: salient readings whose whole-ladder cell fidelity reaches RUNG_TARGET
+  const W = config.weights;
+  const maxRung = W.w_ord + W.w_int + W.w_ratio;
+  const rungW = (name: string): number =>
+    name === 'ord' ? W.w_ord : name === 'int' ? W.w_int : W.w_ratio;
+  const salesRedundancy: SalesReading[] = sales.carriers
+    .map((c) => ({
+      id: c.id,
+      label: c.label,
+      salience: c.salience,
+      ratio: c.rungs.find((x) => x.name === 'ratio')?.f ?? 0,
+      cellF: c.rungs.reduce((s, r) => s + rungW(r.name) * r.f, 0) / maxRung,
+    }))
+    .filter((c) => c.salience >= SALIENT && c.cellF >= RUNG_TARGET)
+    .sort((a, b2) => b2.cellF - a.cellF);
+  const isLength = (id: string): boolean => id.includes('displacement.magnitude');
+  const isPosition = (id: string): boolean =>
+    id.includes('.start.') || id.includes('.end.') || id.includes('.midpoint.');
+  const lenPosPair =
+    salesRedundancy.some((c) => isLength(c.id)) && salesRedundancy.some((c) => isPosition(c.id));
+
   // loud-but-meaningless carriers: salient variation whose best cell (either relation) is ~nothing
   const maxQ = new Map<string, number>();
   const sal = new Map<string, number>();
@@ -196,6 +234,8 @@ function characterize(figure: Figure, b: Breakdown): Characterization {
     bestOrder,
     bestSales,
     divisionOfLabor,
+    salesRedundancy,
+    lenPosPair,
     loudMeaningless,
     ink,
     legible,
@@ -400,6 +440,13 @@ function runSeed(figureSeed: number, dataSeed: number, core: boolean): SeedRepor
       `   sales → ${ch.bestSales ? `${ch.bestSales.label}: ratio=${ch.bestSales.f.toFixed(3)} sal=${ch.bestSales.salience.toFixed(2)}` : 'NO salient carrier'}`,
   );
   console.log(`  division of labor: ${ch.divisionOfLabor ? 'YES' : 'no'}   ${ch.line}`);
+  console.log(
+    `  sales redundancy: ${ch.salesRedundancy.length} salient reading(s) with cell fidelity ≥ ${RUNG_TARGET}` +
+      (ch.lenPosPair ? '  [LENGTH+POSITION PAIR]' : '') +
+      (ch.salesRedundancy.length > 0
+        ? ` — ${ch.salesRedundancy.map((c) => `${c.label} ${c.cellF.toFixed(2)}`).join(', ')}`
+        : ''),
+  );
   for (let i = 0; i < 12; i++) {
     const b = segBase(i);
     const [sx, sy, ex, ey] = [r.figure[b]!, r.figure[b + 1]!, r.figure[b + 2]!, r.figure[b + 3]!];

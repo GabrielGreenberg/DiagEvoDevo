@@ -22,6 +22,10 @@
 //   • setMaxSteps(n): live-adjustable per-trajectory step cap; raising it un-caps 'capped'
 //     trajectories if the restart budget hasn't retired them; lowering it caps running trajectories
 //     at their next step. Initial value: config.converge.maxSteps.
+//   • setPlateauRelEps(x): live-adjustable convergence strictness (relative score spread over the
+//     plateau window; smaller = stricter = runs continue longer). Applies to running trajectories'
+//     FUTURE plateau checks and to replacements; NEVER retroactively un-converges a finished
+//     endpoint. Rejects non-finite / non-positive values. Initial: config.converge.plateauRelEps.
 //   • result(id?): with an id, carries THAT trajectory's figure/score (Save saves the selection);
 //     without one, falls back to best() (bench/accept).
 
@@ -59,6 +63,7 @@ export interface SessionApi {
   best(): BestView;
   breakdown(): Breakdown;
   setMaxSteps(n: number): void;
+  setPlateauRelEps(x: number): void;
   result(id?: number): SessionResult;
 }
 

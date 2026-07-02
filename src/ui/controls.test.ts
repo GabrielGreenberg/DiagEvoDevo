@@ -17,6 +17,7 @@ function spies(): ControlCallbacks {
     onEditFigureSeed: vi.fn(),
     onEditDataSeed: vi.fn(),
     onEditMaxSteps: vi.fn(),
+    onEditPlateauRelEps: vi.fn(),
     onRun: vi.fn(),
     onPause: vi.fn(),
     onStep: vi.fn(),
@@ -34,6 +35,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     mode: 'idle',
     tick: 0,
     maxSteps: config.converge.maxSteps,
+    plateauRelEps: config.converge.plateauRelEps,
     selectedId: 0,
     loaded: null,
     saveCount: 0,
@@ -95,6 +97,60 @@ describe('controls: max steps', () => {
     el.value = '123';
     updateControls(root, state({ maxSteps: 900 }));
     expect(el.value).toBe('123'); // not clobbered while focused
+    root.remove();
+  });
+});
+
+describe('controls: plateau eps (convergence strictness)', () => {
+  it('mounts a numeric plateau-eps input that allows arbitrary precision (step=any)', () => {
+    const root = document.createElement('div');
+    mountControls(root, spies());
+    const el = input(root, 'plateaueps');
+    expect(el).toBeTruthy();
+    expect(el.type).toBe('number');
+    expect(el.step).toBe('any'); // scientific/decimal values at any precision
+    expect(el.title).toContain('smaller = stricter');
+  });
+
+  it('accepts scientific notation (3e-4) and decimal (0.0003) alike', () => {
+    const root = document.createElement('div');
+    const cb = spies();
+    mountControls(root, cb);
+    const el = input(root, 'plateaueps');
+    el.value = '3e-4';
+    el.dispatchEvent(new Event('change'));
+    expect(cb.onEditPlateauRelEps).toHaveBeenLastCalledWith(3e-4);
+    el.value = '0.0003';
+    el.dispatchEvent(new Event('change'));
+    expect(cb.onEditPlateauRelEps).toHaveBeenLastCalledWith(0.0003);
+    el.value = '1e-6'; // much stricter than the default — must pass through verbatim
+    el.dispatchEvent(new Event('change'));
+    expect(cb.onEditPlateauRelEps).toHaveBeenLastCalledWith(1e-6);
+  });
+
+  it('rejects zero, negatives, and garbage — falling back to the config default', () => {
+    const root = document.createElement('div');
+    const cb = spies();
+    mountControls(root, cb);
+    const el = input(root, 'plateaueps');
+    for (const bad of ['0', '-1e-4', 'garbage', '']) {
+      el.value = bad;
+      el.dispatchEvent(new Event('change'));
+      expect(cb.onEditPlateauRelEps).toHaveBeenLastCalledWith(config.converge.plateauRelEps);
+    }
+  });
+
+  it('updateControls reflects plateauRelEps unless the user is typing in it', () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountControls(root, spies());
+    const el = input(root, 'plateaueps');
+    updateControls(root, state({ plateauRelEps: 1e-5 }));
+    expect(Number(el.value)).toBe(1e-5);
+    el.focus();
+    el.value = '0.5';
+    updateControls(root, state({ plateauRelEps: 1e-5 }));
+    expect(el.value).toBe('0.5'); // not clobbered while focused
     root.remove();
   });
 });

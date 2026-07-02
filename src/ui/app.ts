@@ -12,8 +12,8 @@
 //     on the display path; the gallery's subtle "best" marker may move, the selection may not.
 //   • PERSISTENT RESULTS — when the session reaches 'done' nothing is cleared or replaced; the
 //     canvas, score panel, gallery, and captions freeze as they ended until Reset / new seed.
-//   • PERSISTENT maxSteps — the cap lives in localStorage (persistence/prefs): stored value >
-//     config default, surviving Reset, new seeds, and page reloads.
+//   • PERSISTENT maxSteps AND plateauRelEps — both live in localStorage (persistence/prefs):
+//     stored value > config default, surviving Reset, new seeds, and page reloads.
 //   • Save persists the SELECTED trajectory (result(selectedId)), i.e. what the user is looking at.
 
 import { config } from '../config';
@@ -21,7 +21,12 @@ import { seedToDataSet } from '../core/data';
 import { frameFromConfig } from '../core/frame';
 import { createSession } from '../optim/session';
 import { saveResult, loadLatest } from '../persistence/store';
-import { loadMaxSteps, saveMaxSteps } from '../persistence/prefs';
+import {
+  loadMaxSteps,
+  saveMaxSteps,
+  loadPlateauRelEps,
+  savePlateauRelEps,
+} from '../persistence/prefs';
 import { createStore, type AppState } from './store';
 import type { SessionApi, SessionFactory } from './sessionApi';
 import { createViewport, updateViewport, renderCanvas, type Viewport } from './canvas';
@@ -67,10 +72,14 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   let liveData = seedToDataSet(config.seeds.data); // the dataset the live session targets
   const posited = frameFromConfig();
 
-  // maxSteps precedence: localStorage (survives reloads) > config default.
+  // maxSteps / plateauRelEps precedence: localStorage (survives reloads) > config default.
   const initialMaxSteps = loadMaxSteps() ?? config.converge.maxSteps;
+  const initialPlateauRelEps = loadPlateauRelEps() ?? config.converge.plateauRelEps;
   const initialSession = makeSession(config.seeds.figure, config.seeds.data);
   if (initialMaxSteps !== config.converge.maxSteps) initialSession.setMaxSteps(initialMaxSteps);
+  if (initialPlateauRelEps !== config.converge.plateauRelEps) {
+    initialSession.setPlateauRelEps(initialPlateauRelEps);
+  }
 
   const store = createStore({
     session: initialSession,
@@ -79,6 +88,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     mode: 'idle',
     tick: 0,
     maxSteps: initialMaxSteps,
+    plateauRelEps: initialPlateauRelEps,
     selectedId: firstId(initialSession), // sticky selection defaults to the first trajectory
     loaded: null,
     saveCount: 0,
@@ -90,11 +100,12 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   }
 
   /** Fresh session for (possibly new) seeds. This is the ONLY full display clear (explicit Reset /
-   *  seed change); maxSteps PERSISTS across it (store + localStorage). */
+   *  seed change); maxSteps AND plateauRelEps PERSIST across it (store + localStorage). */
   function newSession(figureSeed: number, dataSeed: number): void {
-    const maxSteps = store.get().maxSteps;
+    const { maxSteps, plateauRelEps } = store.get();
     const session = makeSession(figureSeed, dataSeed);
     session.setMaxSteps(maxSteps);
+    session.setPlateauRelEps(plateauRelEps);
     mainView = createViewport();
     stripState = createTrajStripState();
     liveData = seedToDataSet(dataSeed);
@@ -119,6 +130,14 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       // a done session may come back to life when the cap rises; resume paused, not auto-running
       const mode = s.mode === 'done' && s.session.status === 'running' ? 'paused' : modeFor(s.session, s.mode);
       store.set({ maxSteps: v, mode });
+    },
+    onEditPlateauRelEps: (v) => {
+      const s = store.get();
+      savePlateauRelEps(v); // persist FIRST: survives Reset, new seeds, and reloads
+      // live: running trajectories use the new strictness on their next plateau check; finished
+      // endpoints are NEVER retroactively un-converged (session contract), so mode is untouched
+      s.session.setPlateauRelEps(v);
+      store.set({ plateauRelEps: v });
     },
     onRun: () => {
       const s = store.get();

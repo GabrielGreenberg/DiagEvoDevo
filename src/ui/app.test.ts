@@ -16,7 +16,7 @@ import { startApp } from './app';
 import { config } from '../config';
 import { makeFakeSession, type FakeSession, type FakeSessionOptions } from './fixtures';
 import { clearResults } from '../persistence/store';
-import { clearMaxSteps } from '../persistence/prefs';
+import { clearMaxSteps, clearPlateauRelEps } from '../persistence/prefs';
 
 // jsdom's localStorage lacks the Storage methods in this environment (no URL origin); persistence
 // treats it as absent. Stub a real in-memory Storage so Save/Load AND prefs exercise the true path.
@@ -37,6 +37,7 @@ beforeAll(() => vi.stubGlobal('localStorage', memoryStorage()));
 afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   clearMaxSteps(); // each test starts from the config-default cap
+  clearPlateauRelEps(); // …and the config-default convergence strictness
   clearResults();
 });
 
@@ -203,6 +204,61 @@ describe('app: persistent maxSteps (localStorage)', () => {
     expect(q<HTMLInputElement>(b.root, '[data-a="maxsteps"]').value).toBe('12345');
     expect(b.sessions[0]!.setMaxStepsCalls).toContain(12345); // applied to the initial session
     b.root.remove();
+  });
+});
+
+describe('app: persistent plateauRelEps (localStorage)', () => {
+  it('initializes from config when nothing is stored, and persists edits across Reset', () => {
+    const { root, sessions } = mount();
+    const el = q<HTMLInputElement>(root, '[data-a="plateaueps"]');
+    expect(Number(el.value)).toBe(config.converge.plateauRelEps); // no stored pref → config default
+    el.value = '1e-5'; // stricter than default — "keep going while it still improves"
+    el.dispatchEvent(new Event('change'));
+    expect(sessions[0]!.setPlateauRelEpsCalls).toContain(1e-5);
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.setPlateauRelEpsCalls).toContain(1e-5); // persisted across Reset
+    expect(Number(q<HTMLInputElement>(root, '[data-a="plateaueps"]').value)).toBe(1e-5);
+    root.remove();
+  });
+
+  it('persists across a NEW SEED session too (same precedence as maxSteps)', () => {
+    const { root, sessions } = mount();
+    const el = q<HTMLInputElement>(root, '[data-a="plateaueps"]');
+    el.value = '0.002';
+    el.dispatchEvent(new Event('change'));
+    q<HTMLButtonElement>(root, '[data-a="newfig"]').click(); // new figure seed → new session
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.setPlateauRelEpsCalls).toContain(0.002);
+    root.remove();
+  });
+
+  it('round-trips through localStorage: a fresh startApp ("reload") restores the edited strictness', () => {
+    const a = mount();
+    const el = q<HTMLInputElement>(a.root, '[data-a="plateaueps"]');
+    el.value = '3e-6'; // scientific input, far stricter than the default
+    el.dispatchEvent(new Event('change'));
+    a.root.remove();
+    // simulate a page reload: a brand-new app instance over the same localStorage
+    const b = mount();
+    expect(Number(q<HTMLInputElement>(b.root, '[data-a="plateaueps"]').value)).toBe(3e-6);
+    expect(b.sessions[0]!.setPlateauRelEpsCalls).toContain(3e-6); // applied to the initial session
+    b.root.remove();
+  });
+
+  it('editing plateau eps never disturbs the run mode or the display (non-retroactive contract)', () => {
+    const { root, sessions } = mount({ slots: 2, plateauAt: [1, 1] });
+    step(root); // both plateau → done
+    expect(sessions[0]!.status).toBe('done');
+    const el = q<HTMLInputElement>(root, '[data-a="plateaueps"]');
+    el.value = '1e-9'; // drastically stricter, AFTER everything finished
+    el.dispatchEvent(new Event('change'));
+    // finished endpoints stay converged; done stays done; Save stays armed
+    expect(sessions[0]!.status).toBe('done');
+    const badges = [...root.querySelectorAll('.tbadge')].map((b) => b.textContent);
+    expect(badges).toEqual(['converged', 'converged']);
+    expect(q<HTMLButtonElement>(root, '[data-a="save"]').disabled).toBe(false);
+    root.remove();
   });
 });
 

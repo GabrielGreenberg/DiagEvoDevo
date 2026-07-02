@@ -3,8 +3,9 @@
 // The orchestrator (optimizer v2, ARCHITECTURE.md §optim; "let each evolution play out"):
 // populationSize INDEPENDENT multi-start trajectories. Each trajectory owns its Adam state, its
 // anneal clock (T decays with the trajectory's OWN step count, so every replacement re-anneals
-// from tStart), and its plateau detector. There is NO champion adoption and NO mid-run culling:
-// a trajectory that plateaus — or hits the live per-trajectory step cap (setMaxSteps) — is FROZEN
+// from tStart), and its plateau detector (whose strictness is the live setPlateauRelEps threshold).
+// There is NO champion adoption and NO mid-run culling: a trajectory that plateaus — or hits the
+// live per-trajectory step cap (setMaxSteps) — is FROZEN
 // as an endpoint; its freed slot starts a replacement (deterministically alternating fresh-random /
 // mutation-of-best-endpoint per evolve.mutateFraction) until evolve.maxRestarts replacements have
 // been spent. Every trajectory carries a STABLE id (never reused); allTrajectories() exposes the
@@ -84,6 +85,7 @@ export class Session {
   private nextId = 0; // monotonic trajectory-identity counter (ids are never reused)
   private restartsUsed = 0;
   private maxStepsLive: number; // live-adjustable per-trajectory cap (setMaxSteps)
+  private plateauRelEpsLive: number; // live-adjustable convergence strictness (setPlateauRelEps)
   private rng: Rng;
   private readonly frame: ReturnType<typeof frameFromConfig>;
   private readonly page: ReturnType<typeof pageFromConfig>;
@@ -97,6 +99,7 @@ export class Session {
     this.page = pageFromConfig(cfg);
     this.rng = populationRng(figureSeed);
     this.maxStepsLive = cfg.converge.maxSteps;
+    this.plateauRelEpsLive = cfg.converge.plateauRelEps;
     this.slots = initialFigures(figureSeed, cfg.evolve.populationSize, this.rng, cfg).map((f, k) =>
       newTrajectory(this.nextId++, k, 'initial', f),
     );
@@ -136,6 +139,24 @@ export class Session {
     }
   }
 
+  /** The live convergence strictness (initially config.converge.plateauRelEps). */
+  get plateauRelEps(): number {
+    return this.plateauRelEpsLive;
+  }
+
+  /**
+   * Live-adjust the convergence flatness threshold (GUI control): the relative score spread over
+   * the plateau window below which a trajectory is declared converged. Smaller = stricter = runs
+   * continue longer. Applies to ALL trajectories' plateau detectors — running ones on their next
+   * check, and every future replacement. Deliberately NON-retroactive: lowering it never
+   * un-converges an already-finished endpoint (their detectors are never consulted again); raising
+   * it makes still-running detectors fire sooner. Rejects non-finite or non-positive values.
+   */
+  setPlateauRelEps(x: number): void {
+    if (!Number.isFinite(x) || x <= 0) return;
+    this.plateauRelEpsLive = x;
+  }
+
   /** One session step: replace retired slots, then advance every ACTIVE trajectory by one inner
    *  Adam step on its OWN anneal clock. No-op once done. */
   step(): void {
@@ -166,7 +187,11 @@ export class Session {
     }
 
     // 2. Advance every ACTIVE trajectory by one inner step; finished slots are skipped.
-    const convCfg = { ...this.cfg.converge, maxSteps: this.maxStepsLive };
+    const convCfg = {
+      ...this.cfg.converge,
+      maxSteps: this.maxStepsLive,
+      plateauRelEps: this.plateauRelEpsLive,
+    };
     for (const t of this.slots) {
       if (t.status !== 'running') continue;
       const stepCfg = this.annealCfg(t.steps);

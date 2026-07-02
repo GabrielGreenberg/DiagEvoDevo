@@ -1,8 +1,9 @@
 // src/ui/controls.ts
 //
-// The control bar: independent, editable figure/data seeds; the live "max steps" cap; Run/Pause/
-// Step/Reset; Save/Load. Built once (mountControls) with listeners attached; updateControls only
-// toggles button state/text so the per-frame render loop never clobbers an input the user is typing.
+// The control bar: independent, editable figure/data seeds; the live "max steps" cap; the live
+// "plateau eps" convergence strictness; Run/Pause/Step/Reset; Save/Load. Built once (mountControls)
+// with listeners attached; updateControls only toggles button state/text so the per-frame render
+// loop never clobbers an input the user is typing.
 
 import { config } from '../config';
 import type { AppState } from './store';
@@ -14,6 +15,8 @@ export interface ControlCallbacks {
   onEditDataSeed(v: number): void;
   /** The live per-trajectory step cap → session.setMaxSteps(n) (spec §UI v2 maxSteps control). */
   onEditMaxSteps(v: number): void;
+  /** The live convergence strictness → session.setPlateauRelEps(x) (spec: elastic convergence). */
+  onEditPlateauRelEps(v: number): void;
   onRun(): void;
   onPause(): void;
   onStep(): void;
@@ -36,6 +39,9 @@ export function mountControls(root: HTMLElement, cb: ControlCallbacks): void {
       <label>max steps <input type="number" data-a="maxsteps" class="seedinput stepsinput"
         min="${MAX_STEPS_MIN}" step="${MAX_STEPS_STEP}"
         title="per-trajectory step cap (live: raising it un-caps capped trajectories)" /></label>
+      <label>plateau eps <input type="number" data-a="plateaueps" class="seedinput stepsinput"
+        min="0" step="any"
+        title="convergence flatness threshold — smaller = stricter = runs continue longer; relative score spread over the plateau window" /></label>
     </div>
     <div class="runbtns">
       <button data-a="runpause" class="primary">▶ Run</button>
@@ -70,6 +76,14 @@ export function mountControls(root: HTMLElement, cb: ControlCallbacks): void {
     const v = Number.isFinite(raw) ? Math.max(MAX_STEPS_MIN, Math.trunc(raw)) : config.converge.maxSteps;
     cb.onEditMaxSteps(v);
   });
+  q<HTMLInputElement>('plateaueps').addEventListener('change', (e) => {
+    // scientific (3e-4) and decimal (0.0003) both parse via Number; the threshold is a relative
+    // spread, so only finite POSITIVE values are meaningful — anything else falls back to config
+    const str = (e.target as HTMLInputElement).value.trim();
+    const raw = str === '' ? NaN : Number(str);
+    const v = Number.isFinite(raw) && raw > 0 ? raw : config.converge.plateauRelEps;
+    cb.onEditPlateauRelEps(v);
+  });
 }
 
 export function updateControls(root: HTMLElement, s: AppState): void {
@@ -79,6 +93,7 @@ export function updateControls(root: HTMLElement, s: AppState): void {
   const figseed = root.querySelector('[data-a="figseed"]') as HTMLInputElement;
   const dataseed = root.querySelector('[data-a="dataseed"]') as HTMLInputElement;
   const maxsteps = root.querySelector('[data-a="maxsteps"]') as HTMLInputElement;
+  const plateaueps = root.querySelector('[data-a="plateaueps"]') as HTMLInputElement;
   runpause.textContent = s.mode === 'running' ? '⏸ Pause' : '▶ Run';
   // the session is done (all trajectories played out) — nothing left to run
   runpause.disabled = s.mode === 'done';
@@ -88,4 +103,5 @@ export function updateControls(root: HTMLElement, s: AppState): void {
   if (document.activeElement !== figseed) figseed.value = String(s.figureSeed);
   if (document.activeElement !== dataseed) dataseed.value = String(s.dataSeed);
   if (document.activeElement !== maxsteps) maxsteps.value = String(s.maxSteps);
+  if (document.activeElement !== plateaueps) plateaueps.value = String(s.plateauRelEps);
 }

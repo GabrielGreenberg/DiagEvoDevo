@@ -22,6 +22,9 @@ export interface AppState {
   /** The live per-trajectory step cap (session.setMaxSteps). UI state so it PERSISTS across
    *  Reset / new-seed within this app instance (spec: maxSteps control). */
   maxSteps: number;
+  /** The live convergence strictness (session.setPlateauRelEps): the relative score spread below
+   *  which a trajectory plateaus. Persists exactly like maxSteps (spec: plateau-eps control). */
+  plateauRelEps: number;
   loaded: SessionResult | null; // a loaded saved result being reviewed (overrides the live figure)
   saveCount: number;
 }
