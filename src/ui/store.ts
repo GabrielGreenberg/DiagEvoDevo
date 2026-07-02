@@ -15,6 +15,10 @@ export interface AppState {
   dataSeed: number;
   mode: RunMode;
   tick: number; // frame counter; bumping it forces a re-render
+  /** STICKY selection: the stable trajectory id shown on the main canvas + score panel. Changes
+   *  ONLY on a user thumbnail click (or session reset → first trajectory). Never auto-switches —
+   *  not on overtake, not on finish, not on slot restart (spec: sticky selection). */
+  selectedId: number;
   /** The live per-trajectory step cap (session.setMaxSteps). UI state so it PERSISTS across
    *  Reset / new-seed within this app instance (spec: maxSteps control). */
   maxSteps: number;

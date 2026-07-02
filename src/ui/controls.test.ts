@@ -34,6 +34,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     mode: 'idle',
     tick: 0,
     maxSteps: config.converge.maxSteps,
+    selectedId: 0,
     loaded: null,
     saveCount: 0,
     ...patch,
@@ -54,6 +55,17 @@ describe('controls: max steps', () => {
     expect(el.type).toBe('number');
     expect(Number(el.min)).toBe(config.converge.minSteps);
     expect(Number(el.step)).toBeGreaterThan(0);
+    expect(el.max).toBe(''); // NO upper bound: large caps (10000+) must be allowed
+  });
+
+  it('accepts large caps (>= 10000) verbatim', () => {
+    const root = document.createElement('div');
+    const cb = spies();
+    mountControls(root, cb);
+    const el = input(root, 'maxsteps');
+    el.value = '10000';
+    el.dispatchEvent(new Event('change'));
+    expect(cb.onEditMaxSteps).toHaveBeenLastCalledWith(10000);
   });
 
   it('change fires onEditMaxSteps with a sanitized integer, clamped to the minimum', () => {

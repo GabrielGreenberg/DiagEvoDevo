@@ -7,9 +7,10 @@
 // a trajectory that plateaus — or hits the live per-trajectory step cap (setMaxSteps) — is FROZEN
 // as an endpoint; its freed slot starts a replacement (deterministically alternating fresh-random /
 // mutation-of-best-endpoint per evolve.mutateFraction) until evolve.maxRestarts replacements have
-// been spent. The session result is the best endpoint by EXACT score. The GUI drives step() from
-// requestAnimationFrame and renders every slot (trajectory strip) plus best(); bench/accept drive
-// run() headless.
+// been spent. Every trajectory carries a STABLE id (never reused); allTrajectories() exposes the
+// full history (endpoints + live) for the GUI's gallery, and detail(id) serves the sticky user
+// selection. The GUI drives step() from requestAnimationFrame; bench/accept drive run() headless
+// and take result() = best endpoint by EXACT score (result(id) saves a specific trajectory).
 
 import { config, type Config } from '../config';
 import type { DataSet } from '../core/data';
@@ -31,8 +32,11 @@ export type SessionStatus = 'running' | 'done';
 export type TrajectoryStatus = 'running' | 'plateaued' | 'capped';
 export type TrajectoryKind = 'initial' | 'restart-fresh' | 'restart-mutant';
 
-/** One slot's current trajectory, as the UI sees it (thumbnail strip). */
+/** One trajectory, as the UI sees it (gallery thumbnail / selection). */
 export interface TrajectoryView {
+  /** STABLE identity: unique per trajectory within the session, never reused. Slot indices are
+   *  recycled by replacements; ids are not — selection and gallery order key on this. */
+  id: number;
   slot: number;
   figure: Figure;
   exactTotal: number; // exact (non-annealed) score S of the current figure
@@ -42,6 +46,7 @@ export interface TrajectoryView {
 }
 
 interface Trajectory {
+  id: number;
   slot: number;
   kind: TrajectoryKind;
   figure: Figure;
@@ -76,6 +81,7 @@ export class Session {
 
   private slots: Trajectory[];
   private endpoints: Trajectory[] = []; // retired (replaced) trajectories, frozen forever
+  private nextId = 0; // monotonic trajectory-identity counter (ids are never reused)
   private restartsUsed = 0;
   private maxStepsLive: number; // live-adjustable per-trajectory cap (setMaxSteps)
   private rng: Rng;
@@ -92,7 +98,7 @@ export class Session {
     this.rng = populationRng(figureSeed);
     this.maxStepsLive = cfg.converge.maxSteps;
     this.slots = initialFigures(figureSeed, cfg.evolve.populationSize, this.rng, cfg).map((f, k) =>
-      newTrajectory(k, 'initial', f),
+      newTrajectory(this.nextId++, k, 'initial', f),
     );
   }
 
@@ -156,7 +162,7 @@ export class Session {
         fig = randomFigure(this.rng, this.cfg);
         kind = 'restart-fresh';
       }
-      this.slots[t.slot] = newTrajectory(t.slot, kind, fig);
+      this.slots[t.slot] = newTrajectory(this.nextId++, t.slot, kind, fig);
     }
 
     // 2. Advance every ACTIVE trajectory by one inner step; finished slots are skipped.
@@ -185,16 +191,23 @@ export class Session {
     }
   }
 
-  /** Every slot's current trajectory (the UI's thumbnail strip). */
+  /** Every slot's current trajectory (live population view). */
   trajectories(): TrajectoryView[] {
-    return this.slots.map((t) => ({
-      slot: t.slot,
-      figure: t.figure,
-      exactTotal: this.exactOf(t).total,
-      status: t.status,
-      steps: t.steps,
-      kind: t.kind,
-    }));
+    return this.slots.map((t) => this.viewOf(t));
+  }
+
+  /** EVERY trajectory ever started in this session, in creation (id) order: retired endpoints
+   *  frozen forever plus the current slot occupants. The gallery renders this — results never
+   *  disappear when a slot is recycled. */
+  allTrajectories(): TrajectoryView[] {
+    return [...this.endpoints, ...this.slots].sort((a, b) => a.id - b.id).map((t) => this.viewOf(t));
+  }
+
+  /** One trajectory's figure + exact breakdown by STABLE id (the sticky-selection display path).
+   *  Works for live trajectories and frozen endpoints alike; null only for an unknown id. */
+  detail(id: number): { figure: Figure; breakdown: Breakdown } | null {
+    const t = this.findById(id);
+    return t ? { figure: t.figure, breakdown: this.exactOf(t) } : null;
   }
 
   /** Best figure by EXACT total across finished endpoints and live trajectories. */
@@ -217,8 +230,10 @@ export class Session {
     }
   }
 
-  result(): SessionResult {
-    const t = this.bestTrajectory();
+  /** Result for saving. With an `id`, the SELECTED trajectory's figure/breakdown is saved (what
+   *  the user is looking at); without one it falls back to best() (headless bench/accept). */
+  result(id?: number): SessionResult {
+    const t = (id !== undefined ? this.findById(id) : null) ?? this.bestTrajectory();
     const b = this.exactOf(t);
     const topCarriers: Record<string, string> = {};
     for (const rel of b.relations) topCarriers[rel.key] = rel.carriers[0]?.id ?? '';
@@ -237,6 +252,23 @@ export class Session {
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  private viewOf(t: Trajectory): TrajectoryView {
+    return {
+      id: t.id,
+      slot: t.slot,
+      figure: t.figure,
+      exactTotal: this.exactOf(t).total,
+      status: t.status,
+      steps: t.steps,
+      kind: t.kind,
+    };
+  }
+
+  /** Trajectory by stable id, across endpoints AND live slots (ids never disappear). */
+  private findById(id: number): Trajectory | null {
+    return this.slots.find((t) => t.id === id) ?? this.endpoints.find((t) => t.id === id) ?? null;
+  }
 
   /** Exact breakdown of a trajectory's current figure, cached against its own step count.
    *  (Endpoints never step again, so each is scored exactly once.) */
@@ -285,8 +317,9 @@ export class Session {
   }
 }
 
-function newTrajectory(slot: number, kind: TrajectoryKind, figure: Figure): Trajectory {
+function newTrajectory(id: number, slot: number, kind: TrajectoryKind, figure: Figure): Trajectory {
   return {
+    id,
     slot,
     kind,
     figure,

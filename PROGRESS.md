@@ -157,6 +157,23 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
       re-examine `w_ord/w_int/w_ratio`.
 
 ## Done this project
+- **UI feedback pass (2026-07-02): sticky selection · gallery · persistent results · persistent
+  maxSteps.** User requirements, implemented at the session layer + UI: (1) STICKY SELECTION — the
+  main canvas/score panel show one trajectory chosen by STABLE id (never reused across slot
+  recycling); default = first trajectory; changes only on a thumbnail click, never on overtake/
+  finish/restart. `session.best()` removed from the display path (gallery keeps a subtle ★ best
+  marker that may move). (2) GALLERY — the strip renders `session.allTrajectories()`: every
+  trajectory ever started, endpoints frozen forever, horizontal scroll on overflow; per-trajectory
+  viewports keyed by id; frozen endpoints skip repaint. (3) PERSISTENT RESULTS — nothing clears at
+  'done'; only Reset/new-seed clears. (4) PERSISTENT maxSteps — `persistence/prefs.ts`
+  (localStorage; precedence stored > config default) survives Reset, new seeds, reloads; input
+  allows 10000+. (5) Save persists the SELECTED trajectory via `session.result(id)` (headless
+  `result()` still = best). Session API additions: `TrajectoryView.id`, `allTrajectories()`,
+  `detail(id)`, `result(id?)`; contract fake (`ui/fixtures.ts`) reworked with ids/endpoints/
+  restarts + `forceTotal` for adversarial overtake tests. Adversarial tests: no-auto-switch under
+  overtake/finish/restart, gallery monotone growth + bit-frozen endpoints, nothing-clears-at-done,
+  localStorage round-trip, Save-saves-selected. Verified: `npm run check` (222 tests) + `npm run
+  build` green; live GUI exercised (run to done with restarts, selection pinned, reload persistence).
 - **M0 (2026-07-01):** Project scaffolding (Vite/TS/Vitest/ESLint), `package.json` with the six
   workflows, strict `tsconfig` (`noUncheckedIndexedAccess`), full 33-file module tree (autograd
   built, rest stubbed), `config.ts` single-source-of-tunables, and `core/rng.ts` (mulberry32).

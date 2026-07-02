@@ -12,6 +12,7 @@ const initial = (): AppState => ({
   mode: 'idle',
   tick: 0,
   maxSteps: config.converge.maxSteps,
+  selectedId: 0,
   loaded: null,
   saveCount: 0,
 });

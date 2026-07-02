@@ -9,6 +9,9 @@
 //   • both replacement kinds occur at the shipped mutateFraction, the mutant's parent is the BEST
 //     endpoint, and every replacement re-anneals from ITS OWN step 0,
 //   • best() dominates every endpoint,
+//   • STABLE IDENTITY + full history: ids are unique and never reused, allTrajectories() only ever
+//     grows (endpoints never vanish, finished views freeze bit-exactly), detail(id) serves any
+//     trajectory ever, and result(id) saves the SELECTED trajectory (result() stays best),
 //   • setMaxSteps: live raise un-caps un-retired trajectories, live lower caps at the next step,
 //   • a real short convergence run under the v2 score reaches DIVISION OF LABOR.
 
@@ -70,17 +73,20 @@ const LC = {
 interface LifecycleRun {
   s: Session;
   samples: TrajectoryView[][]; // trajectories() after every step
+  allSamples: TrajectoryView[][]; // allTrajectories() after every step (gallery view)
 }
 
 function runLifecycle(figureSeed = LC.figureSeed): LifecycleRun {
   const s = createSession(figureSeed, LC.dataSeed, LC.cfg);
   const samples: TrajectoryView[][] = [];
+  const allSamples: TrajectoryView[][] = [];
   while (s.status !== 'done' && samples.length < 300) {
     s.step();
     samples.push(s.trajectories());
+    allSamples.push(s.allTrajectories());
   }
   expect(s.status).toBe('done');
-  return { s, samples };
+  return { s, samples, allSamples };
 }
 
 let lifecycleMemo: LifecycleRun | null = null;
@@ -227,6 +233,78 @@ describe('session: replacements (fresh/mutant), frozen endpoints, anneal reset',
     const r = s.result();
     expect(r.score.total).toBe(best);
     expect(r.converged).toBe(true);
+  });
+});
+
+// ── stable identity, the full-history gallery, and per-trajectory detail/save ───
+
+describe('session: stable trajectory ids, allTrajectories(), detail(), result(id)', () => {
+  it('allTrajectories() only ever GROWS, in creation (id) order, and never drops an endpoint', () => {
+    const { allSamples } = lifecycle();
+    let prevIds: number[] = [];
+    for (const sample of allSamples) {
+      const ids = sample.map((v) => v.id);
+      // strictly increasing ⇒ unique, creation-ordered, and ids are never reused
+      for (let i = 1; i < ids.length; i++) expect(ids[i]!).toBeGreaterThan(ids[i - 1]!);
+      // monotone growth: every id previously present is still present (endpoints never vanish)
+      expect(ids.slice(0, prevIds.length)).toEqual(prevIds);
+      prevIds = ids;
+    }
+    // the lifecycle scenario spawns exactly population(2) + budget(2) trajectories
+    const final = allSamples[allSamples.length - 1]!;
+    expect(final.map((v) => v.id)).toEqual([0, 1, 2, 3]);
+    expect(final.map((v) => v.kind)).toEqual([
+      'initial',
+      'initial',
+      'restart-fresh',
+      'restart-mutant',
+    ]);
+  });
+
+  it('a finished trajectory is FROZEN in the gallery: identical view forever after', () => {
+    const { allSamples } = lifecycle();
+    const frozenAt = new Map<number, TrajectoryView>();
+    for (const sample of allSamples) {
+      for (const v of sample) {
+        const f = frozenAt.get(v.id);
+        if (f) {
+          // adversarial: any later mutation of a finished trajectory breaks these
+          expect(v.status).toBe(f.status);
+          expect(v.steps).toBe(f.steps);
+          expect(v.exactTotal).toBe(f.exactTotal);
+          expect(arr(v.figure)).toEqual(arr(f.figure));
+        } else if (v.status !== 'running') {
+          frozenAt.set(v.id, v);
+        }
+      }
+    }
+    expect(frozenAt.size).toBe(4); // all four trajectories eventually froze
+  });
+
+  it('detail(id) serves every trajectory ever (endpoints included); unknown ids are null', () => {
+    const { s } = lifecycle();
+    for (const v of s.allTrajectories()) {
+      const d = s.detail(v.id)!;
+      expect(d).not.toBeNull();
+      expect(arr(d.figure)).toEqual(arr(v.figure));
+      expect(d.breakdown.total).toBe(v.exactTotal);
+    }
+    expect(s.detail(999)).toBeNull();
+    expect(s.detail(-1)).toBeNull();
+  });
+
+  it('result(id) saves THAT trajectory (the selection), result() still saves best', () => {
+    const { s } = lifecycle();
+    const all = s.allTrajectories();
+    const best = s.best().breakdown.total;
+    // pick a NON-best trajectory to prove result(id) does not silently fall back to best
+    const notBest = all.find((v) => v.exactTotal !== best);
+    expect(notBest).toBeDefined();
+    const r = s.result(notBest!.id);
+    expect(arr(r.figure)).toEqual(arr(notBest!.figure));
+    expect(r.score.total).toBe(notBest!.exactTotal);
+    expect(r.score.total).not.toBe(best);
+    expect(s.result().score.total).toBe(best); // headless default unchanged
   });
 });
 

@@ -8,6 +8,7 @@
 import type { SessionResult } from '../optim/session';
 import type { Breakdown } from '../core/score';
 import type { Config } from '../config';
+import { storage } from './storage';
 
 const KEY = 'diagram-evolver:results';
 
@@ -54,24 +55,6 @@ export function deserialize(s: SerializedResult): SessionResult {
     steps: s.steps,
     configSnapshot: s.configSnapshot,
   };
-}
-
-function storage(): Storage | null {
-  try {
-    // Guard the full API surface: some DOM shims (e.g. jsdom without a URL origin) expose a
-    // `localStorage` object whose Storage methods are missing — treat that as "no storage".
-    if (
-      typeof localStorage !== 'undefined' &&
-      typeof localStorage.getItem === 'function' &&
-      typeof localStorage.setItem === 'function' &&
-      typeof localStorage.removeItem === 'function'
-    ) {
-      return localStorage;
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 export function listSerialized(): SerializedResult[] {

@@ -39,6 +39,7 @@
         width: 74px; background: var(--panel2); color: var(--ink);
         border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px;
       }
+      .stepsinput { width: 92px; } /* five-digit caps (e.g. 10000+) fit comfortably */
       button {
         background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
         border-radius: 6px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
@@ -57,13 +58,17 @@
       }
       .caption { padding: 8px 4px 0; font-size: 12px; }
 
-      /* trajectory strip: one thumbnail per population slot (every evolution plays out) */
+      /* trajectory GALLERY: one thumbnail per trajectory ever started (endpoints included);
+         horizontal scroll on overflow. Click = sticky selection (accent border, does not move on
+         its own); ★ = current best by exact total (subtle, may move). */
       .trajstrip { display: flex; gap: 8px; padding-top: 8px; overflow-x: auto; }
       .traj {
         flex: 0 0 auto; width: 128px; border: 1px solid var(--line); border-radius: 8px;
-        background: var(--panel); padding: 4px;
+        background: var(--panel); padding: 4px; cursor: pointer;
       }
-      .traj.best { border-color: var(--accent); }
+      .traj:hover { border-color: #3a4055; }
+      .traj.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+      .traj.best .tscore::after { content: ' ★'; color: var(--ord); font-size: 9px; }
       .trajcanvas { width: 118px; height: 78px; display: block; background: #0d0f16; border-radius: 5px; }
       .trajmeta { display: flex; align-items: center; gap: 5px; padding-top: 3px; font-size: 10px; font-family: ui-monospace, monospace; }
       .tscore { font-weight: 600; }
