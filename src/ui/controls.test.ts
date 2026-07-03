@@ -38,7 +38,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     plateauRelEps: config.converge.plateauRelEps,
     disabledCarriers: config.carriers.disabled,
     matchBonus: config.aggregation.matchBonus,
-    coincidence: config.bonuses.coincidence.weight !== 0,
+    coincidence: config.bonuses.coincidence.weight !== 0 ? config.bonuses.coincidence.mode : 'off',
     selectedId: 0,
     loaded: null,
     saveCount: 0,

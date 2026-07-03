@@ -10,6 +10,81 @@ the same session that work happens. Never reconstruct state that belongs here.
 CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
 (`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
+### Strong (same-ink-path) coincidence — off/weak/strong selectable (2026-07-03, user directive)
+The principled resolution of the weak bonus's verified blind spot (axis-by-construction vs
+collapse-by-degeneration — the w=0.3 dot-plot and mid-anchor traps). CONCEPT §7's registered
+"strong version" open question is CLOSED; §7 now carries the full theory (path catalogue, dogleg
+convention, overlap kernel, ink gate, what it fixes).
+- **Core** (`measurements/paths.ts` + `score.ts`): every length-class reading gets a MEASUREMENT
+  PATH — the page segment its reading procedure traces, derived structurally from
+  (anchor, part, reading) against cfg.frame/cfg.page (survives M8): point x = ruler from the perp
+  axis at the point's height; point y = plumb from the frame axis; fr·dist = radial ruler from O;
+  length = the ink itself; run/rise = dogleg legs, corner (end_x, start_y) — PARALLEL LEG FIRST
+  (the convention). Strong pairScore = eq · strongOverlap · q1^p·q2^p with
+  strongOverlap = mean_i(ov_i·g_i): ov = smooth orientation-symmetric endpoint kernel (σ_path),
+  g = ink gate ‖disp‖²/(‖disp‖²+θ_ink²) — THE collapse killer (a point's coincident paths prove
+  nothing). Strong = weak × alignment × ink. Angle pairs (arcs) and origin-free page point
+  projections keep the weak formula (no linear ink-path; documented). Everything else — pair set,
+  eq cache, pair-LSE, weight, Breakdown plumbing — identical to weak; overlaps cached once per
+  unordered pair across relations; tape ≤ 2.2× weak. Config: `bonuses.coincidence.mode`
+  ('weak' DEFAULT — the acceptance-validated behavior), `sigmaPath: 5`, `thetaInk: 5`, commented.
+  Breakdown pairs gain an optional `overlap` (ink factor, path pairs in strong mode only).
+- **UI**: the reinforcement panel's coincidence toggle became a 3-state SELECTOR off/weak/strong
+  (exclusive chips, same persist-first/pending/bite-at-Reset semantics); pref migrates the legacy
+  boolean ('true'→'weak', 'false'→'off', garbage→config default); score panel bonus row names the
+  scored mode ("coincidence bonus (strong)") and path pairs display "· ink 0.98".
+- **Verified consequences** (`core/strongCoincidence.test.ts`, +33 tests; 371 green): golden's
+  end-y ≡ rise ≡ length triple overlap = mean ink gate exactly (ov_i = 1; 0.773 at K — the small
+  bars pay θ_ink; ≈ 0.98 loud); floating bars kill (end-y,length) < 1e-12 while (rise,length)
+  survives bit-for-bit (a vertical bar's rise leg IS its ink); dot collapse ⇒ ink gate 0 EXACTLY
+  on every pair; mid-anchor's lone (mid-y,length) path-killed (ink 0.09); spokes earn
+  (fr·end dist, length); verticality start-x ≡ end-x ≈ 0 (different rulers ≠ same ink) while the
+  axis identity start-x ≡ fr·start-dist carries golden's order coincidence; orientation/mirror
+  symmetric; near-collapse (3u whiskers) keeps < 1/3 of weak.
+
+### Strong coincidence — adversarial verification pass (2026-07-03, independent verifier)
+All six attack lines executed with numbers (probes: `scratch/verify_strong_trap_regression.ts`,
+`verify_strong_loopholes.ts`, `verify_strong_ranking.ts`, `verify_strong_grads.ts`,
+`verify_strong_bitexact_fingerprint.ts`, `verify_strong_fulldepth_seed.ts`; outputs in
+`scratch/*.out.txt`):
+- **TRAP REGRESSION (the point)**: at w=0.3 (where weak trapped), weak-mode bonuses: golden 0.226,
+  dot collapse 0.201, mid-anchor 0.201 — the traps earn ≈ golden's bonus (per-pair: trap pairs
+  0.72 ≈ golden's 0.72 — the blind spot, reproduced). STRONG at 0.3: dot 0.0008 (÷250),
+  mid-anchor 0.031 (trap pair mid-y ≡ length 0.723 → 0.066, ink 0.091; residue = the legitimate
+  rise ≡ length) while golden keeps 0.088 and outranks both traps statically (1.493 vs 1.424 /
+  1.335). Same shape at w=0.2.
+- **LOOPHOLE HUNT**: figures farming REAL strong ink (y-axis pileup: 6-pair eq=1 cluster on the
+  axis, ink 0.77–0.98; single origin-ray farming fr·dist ≡ length) surrender the ORDER relation —
+  reward 0.80–0.92 vs golden 1.49 buries them (totals 0.78–1.11, margins ≥ 0.43 at w≤0.3). The
+  strong bonus is parasitic on already-earned q — no ink-farm outscores golden. Found honest:
+  a STACKED-on-axis cumulative chart (start-y ≡ fr·start-dist by construction + order via
+  start-y) outscores small-K golden 1.58 vs 1.46 on REWARD (wins even at w=0) — a legitimate
+  discovered kind, same family as acceptance's spoke/comet finding, not a bonus artifact.
+- **RANKING under strong/0.2** (both gate datasets): golden ≈ mirrored (Δ 0.002) beat every
+  degenerate/trap/random; margins: mid-anchor 0.05 (static; its dynamic stabilizer is gone),
+  dot 0.13, value-sorted/pileups/rays/dials 0.65–1.04, best-of-50 randoms 1.27/1.30 (median ≈ 0).
+- **GRADIENTS**: AD = FD on the full strong total, relL2 2.5e-8 (jittered golden) / 2.1e-8
+  (jittered floating b=4, ov/gate kernels mid-slope); grounding pull ∂total/∂Σstart_y strictly
+  stronger under strong at b = 2/5/8 (−0.0147 vs −0.0076 at b=2).
+- **BIT-EXACTNESS vs HEAD (0984dca)**: twin fingerprint in a fresh HEAD worktree — weak mode at
+  w=0.2 AND w=0 BYTE-IDENTICAL on 5 figures (exact totals, Value totals, full 48-leaf gradient
+  bit-digests); strong-at-weight-0 = weak-at-weight-0 (same node count, root stays sub) per suite.
+- **FULL-DEPTH strong sessions at w=0.3 on the trap seeds** (1 and 5 — where weak mode trapped):
+  LAUNCHED via `scratch/verify_strong_fulldepth_seed.ts` (the reusable runner + mode arg);
+  results land in `scratch/strong_fulldepth_s{1,5}_w03.out.txt` (~10–15 min/seed at the ~2×
+  strong tape). READ THOSE OUTPUTS before treating the dynamic trap closure as verified — the
+  static closure above (trap pairs path-killed, traps outranked) is verified; the characterizer
+  lines in the outputs are the dynamic confirmation.
+- **Gates**: `npm run check` 371/371 · build · gradcheck (40) · `accept --quick --seeds=1,2`
+  gates 1–4 all ok, gate-5 rows 2/2 Y (the "≥5/2" tally artifact of --seeds, documented in the
+  two prior passes); gate-1 numbers bit-stable vs the HEAD acceptance records (defaults weak/0.2
+  untouched). Docs updated: CONCEPT §7 strong section replaces the open question; ARCHITECTURE
+  module map (paths.ts) + §Verification strong-coincidence invariant block; this entry.
+Registered observation: golden's strong ink factor at the acceptance K is 0.773 (not 1.0) — the
+dataset's smallest bars pay θ_ink; loud golden ≈ 0.98. Honest, documented in tests/UI. Full
+`npm run accept` (weak defaults) unaffected by construction; recommended before ever making
+strong the config DEFAULT (the UI selector is the intended entry point today).
+
 ### Scoring v2.2 core — coincidence bonus + matchBonus switch (2026-07-02, user-agreed brief)
 Beyond correlational doubling (mean-LSE already credits independent readings tracking a relation),
 the score now rewards COINCIDENCE: the figure ARRANGING two reading procedures to return the same

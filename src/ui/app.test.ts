@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
 import { startApp } from './app';
 import { config, type Config } from '../config';
 import { seedToDataSet } from '../core/data';
+import { seedToFigure } from '../core/figure';
 import { loudGoldenBarChart } from '../core/fixtures';
 import { scoreExact } from '../core/score';
 import { allCarriers } from '../core/measurements/registry';
@@ -374,51 +375,66 @@ describe('app: readings toggles (carrier on/off chips)', () => {
   });
 });
 
-describe('app: reinforcement toggles (matches / coincidence chips)', () => {
+describe('app: reinforcement controls (matches chip / coincidence 3-state selector)', () => {
   const rchip = (root: HTMLElement, key: string): HTMLButtonElement =>
     q<HTMLButtonElement>(root, `#reinforcepanel .chip[data-rk="${key}"]`);
+  const cchip = (root: HTMLElement, mode: string): HTMLButtonElement =>
+    q<HTMLButtonElement>(root, `#reinforcepanel .chip[data-cm="${mode}"]`);
   const rpend = (root: HTMLElement): HTMLElement =>
     q<HTMLElement>(root, '#reinforcepanel [data-r="pending"]');
+  /** The selector's SELECTED (not .off) settings — must always be exactly one. */
+  const selectedModes = (root: HTMLElement): string[] =>
+    [...root.querySelectorAll<HTMLElement>('#reinforcepanel .chip[data-cm]')]
+      .filter((c) => !c.classList.contains('off'))
+      .map((c) => c.dataset.cm!);
 
-  it('renders both chips ON by default with no pending hint (defaults: config on/on)', () => {
+  it('renders defaults: matches ON, coincidence selector on the CONFIG mode, no pending hint', () => {
     const { root, sessions } = mount();
-    for (const key of ['matchBonus', 'coincidence']) {
-      expect(rchip(root, key).classList.contains('off')).toBe(false);
-      expect(rchip(root, key).classList.contains('pending')).toBe(false);
+    expect(rchip(root, 'matchBonus').classList.contains('off')).toBe(false);
+    expect(rchip(root, 'matchBonus').classList.contains('pending')).toBe(false);
+    // exactly one selected mode chip: the config default (weight ≠ 0 ⇒ its mode, i.e. 'weak')
+    expect(selectedModes(root)).toEqual([config.bonuses.coincidence.mode]);
+    for (const m of ['off', 'weak', 'strong']) {
+      expect(cchip(root, m).classList.contains('pending')).toBe(false);
     }
     expect(rpend(root).hidden).toBe(true);
     // the initial session runs the config defaults
     expect(sessions[0]!.cfg.aggregation.matchBonus).toBe(true);
     expect(sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe(config.bonuses.coincidence.mode);
     root.remove();
   });
 
-  it('clicking toggles the PENDING set only: persisted at once, live session untouched', () => {
+  it('selecting a mode changes the PENDING set only: persisted at once, live session untouched', () => {
     const { root, sessions } = mount();
     const before = displayedTotal(root);
     rchip(root, 'matchBonus').click();
-    rchip(root, 'coincidence').click();
+    cchip(root, 'strong').click();
     // persisted immediately (survives reloads)…
     expect(loadMatchBonus()).toBe(false);
-    expect(loadCoincidence()).toBe(false);
-    // …chips show off + pending, panel hints "applies on Reset"
-    for (const key of ['matchBonus', 'coincidence']) {
-      expect(rchip(root, key).classList.contains('off')).toBe(true);
-      expect(rchip(root, key).classList.contains('pending')).toBe(true);
-    }
+    expect(loadCoincidence()).toBe('strong');
+    // …the selector moved to strong (exclusive) and marks it pending; the hint shows
+    expect(selectedModes(root)).toEqual(['strong']);
+    expect(cchip(root, 'strong').classList.contains('pending')).toBe(true);
+    expect(cchip(root, 'weak').classList.contains('pending')).toBe(false);
     expect(rpend(root).hidden).toBe(false);
     // ADVERSARIAL: the LIVE session keeps its objective — cfg snapshot unchanged, display unchanged
     expect(sessions.length).toBe(1); // no new session was created
     expect(sessions[0]!.cfg.aggregation.matchBonus).toBe(true);
     expect(sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe('weak');
     step(root);
     expect(displayedTotal(root)).toBe(before);
-    // clicking again re-enables and clears the hint
+    // …and each further transition re-persists: strong → off → back to the live weak clears all
+    cchip(root, 'off').click();
+    expect(loadCoincidence()).toBe('off');
+    expect(selectedModes(root)).toEqual(['off']);
+    expect(cchip(root, 'off').classList.contains('pending')).toBe(true);
     rchip(root, 'matchBonus').click();
-    rchip(root, 'coincidence').click();
+    cchip(root, 'weak').click();
     expect(loadMatchBonus()).toBe(true);
-    expect(loadCoincidence()).toBe(true);
-    expect(rpend(root).hidden).toBe(true);
+    expect(loadCoincidence()).toBe('weak');
+    expect(rpend(root).hidden).toBe(true); // pending == live again
     root.remove();
   });
 
@@ -444,12 +460,12 @@ describe('app: reinforcement toggles (matches / coincidence chips)', () => {
     root.remove();
   });
 
-  it('coincidence applies on Reset: weight 0 removes exactly the bonus from the total', () => {
+  it('weak → off applies on Reset: weight 0 removes exactly the bonus from the total', () => {
     const { root, sessions } = mount();
     const id0 = sessions[0]!.trajectories()[0]!.id;
     const before = sessions[0]!.detail(id0)!.breakdown;
     expect(before.bonuses.relationCoin.length).toBeGreaterThan(0); // active at defaults
-    rchip(root, 'coincidence').click();
+    cchip(root, 'off').click();
     q<HTMLButtonElement>(root, '[data-a="reset"]').click();
     expect(sessions.length).toBe(2);
     expect(sessions[1]!.cfg.bonuses.coincidence.weight).toBe(0); // off ⇒ weight 0 (core skips)
@@ -461,21 +477,80 @@ describe('app: reinforcement toggles (matches / coincidence chips)', () => {
     expect(after.reward).toBe(before.reward);
     expect(after.penalty).toBe(before.penalty);
     expect(after.total).toBeCloseTo(before.total - before.bonuses.coincidence, 12);
+    // pending == live again: the selector rests on 'off', no pending mark, no hint
+    expect(selectedModes(root)).toEqual(['off']);
+    expect(cchip(root, 'off').classList.contains('pending')).toBe(false);
+    expect(rpend(root).hidden).toBe(true);
     root.remove();
   });
 
-  it('round-trips a "reload": a fresh startApp restores both toggles into the INITIAL session', () => {
+  it('weak → strong applies on Reset: the NEXT session scores under mode strong (same weight)', () => {
+    const { root, sessions } = mount();
+    cchip(root, 'strong').click();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.cfg.bonuses.coincidence.mode).toBe('strong'); // the selection BIT here
+    expect(sessions[1]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    // the fake session scores under ITS cfg: the breakdown really is the strong-mode scoring
+    const b = sessions[1]!.detail(sessions[1]!.trajectories()[0]!.id)!.breakdown;
+    const want = scoreExact(
+      seedToFigure(sessions[1]!.figureSeed),
+      seedToDataSet(sessions[1]!.dataSeed),
+      sessions[1]!.cfg,
+    );
+    expect(b.total).toBe(want.total);
+    expect(b.bonuses.coincidence).toBe(want.bonuses.coincidence);
+    // pending == live again on the strong chip
+    expect(selectedModes(root)).toEqual(['strong']);
+    expect(cchip(root, 'strong').classList.contains('pending')).toBe(false);
+    expect(rpend(root).hidden).toBe(true);
+    root.remove();
+  });
+
+  it('off → strong applies on Reset: the term returns AT the strong mode, not the weak one', () => {
+    const { root, sessions } = mount();
+    cchip(root, 'off').click();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions[1]!.cfg.bonuses.coincidence.weight).toBe(0);
+    cchip(root, 'strong').click();
+    expect(cchip(root, 'strong').classList.contains('pending')).toBe(true); // live is still off
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(3);
+    expect(sessions[2]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    expect(sessions[2]!.cfg.bonuses.coincidence.mode).toBe('strong');
+    expect(rpend(root).hidden).toBe(true);
+    root.remove();
+  });
+
+  it('round-trips a "reload": a fresh startApp restores both controls into the INITIAL session', () => {
     const a = mount();
     rchip(a.root, 'matchBonus').click();
-    rchip(a.root, 'coincidence').click();
+    cchip(a.root, 'strong').click();
     a.root.remove();
     // simulate a page reload: a brand-new app instance over the same localStorage
     const b = mount();
     expect(b.sessions[0]!.cfg.aggregation.matchBonus).toBe(false);
-    expect(b.sessions[0]!.cfg.bonuses.coincidence.weight).toBe(0);
+    expect(b.sessions[0]!.cfg.bonuses.coincidence.mode).toBe('strong');
+    expect(b.sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
     expect(rchip(b.root, 'matchBonus').classList.contains('off')).toBe(true);
-    expect(rchip(b.root, 'coincidence').classList.contains('off')).toBe(true);
+    expect(selectedModes(b.root)).toEqual(['strong']);
     expect(rpend(b.root).hidden).toBe(true); // pending == live: restored, not "pending"
+    b.root.remove();
+  });
+
+  it('MIGRATES a legacy boolean pref on startup: "false" → off, "true" → weak', () => {
+    const KEY = 'diagram-evolver:prefs:coincidence';
+    localStorage.setItem(KEY, 'false'); // a pre-3-state user who had turned the bonus off
+    const a = mount();
+    expect(a.sessions[0]!.cfg.bonuses.coincidence.weight).toBe(0);
+    expect(selectedModes(a.root)).toEqual(['off']);
+    expect(rpend(a.root).hidden).toBe(true);
+    a.root.remove();
+    localStorage.setItem(KEY, 'true'); // …and one who had it on: the weak formula, the only one then
+    const b = mount();
+    expect(b.sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    expect(b.sessions[0]!.cfg.bonuses.coincidence.mode).toBe('weak');
+    expect(selectedModes(b.root)).toEqual(['weak']);
     b.root.remove();
   });
 });
@@ -672,12 +747,46 @@ describe('app: REFERENCE cell (golden bars benchmark)', () => {
     for (const pair of ['end y ≡ rise 1.00', 'end y ≡ length 1.00', 'rise ≡ length 1.00']) {
       expect(salesLine.textContent).toContain(pair);
     }
+    // weak mode: the bonus row names the mode and pair lines carry NO ink factor
+    expect(root.querySelector('.bonusrow')!.textContent).toContain('coincidence bonus (weak)');
+    expect(salesLine.textContent).not.toContain('ink');
     root.remove();
   });
 
-  it('loses the bonus when the coincidence toggle bites (NEXT session), like any cfg knob', () => {
+  it('under STRONG mode shows the golden triple WITH high ink-path overlaps (mode + ink rendering)', () => {
+    // a stored 'strong' pref reaches the very first session — and therefore the reference cell
+    localStorage.setItem('diagram-evolver:prefs:coincidence', 'strong');
     const { root, sessions } = mount();
-    q<HTMLButtonElement>(root, '#reinforcepanel .chip[data-rk="coincidence"]').click();
+    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe('strong');
+    click(refCell(root));
+    expect(root.querySelector('.bonusrow')!.textContent).toContain('coincidence bonus (strong)');
+    // ground truth: the same figure rescored independently under the session cfg
+    const d = seedToDataSet(config.seeds.data);
+    const want = scoreExact(loudGoldenBarChart(d), d, sessions[0]!.cfg);
+    expect(root.querySelector('.bonusrow')!.textContent).toContain(
+      `+${want.bonuses.coincidence.toFixed(3)}`,
+    );
+    // the grounded triple survives strong mode: same ink (bar ≡ plumb from the axis ≡ its rise
+    // leg), each pair showing ITS core-computed overlap — high, though < 1.00: the dataset's
+    // smallest bars pay the θ_ink visible-extent gate (documented core behavior, not a defect)
+    const salesLine = root.querySelectorAll('.scorepanel .coinline')[0]!;
+    const triple = ['end y ≡ rise', 'end y ≡ length', 'rise ≡ length'];
+    for (const label of triple) {
+      const pair = want.bonuses.pairs.find(
+        (p) => p.key === 'sales' && `${p.aLabel} ≡ ${p.bLabel}` === label,
+      )!;
+      expect(pair).toBeDefined(); // the triple still earns the bonus in strong mode
+      expect(pair.overlap!).toBeGreaterThan(0.7); // near-1 alignment (θ_ink discount only)
+      expect(salesLine.textContent).toContain(
+        `${label} ${pair.eq.toFixed(2)} · ink ${pair.overlap!.toFixed(2)}`,
+      );
+    }
+    root.remove();
+  });
+
+  it('loses the bonus when the coincidence "off" selection bites (NEXT session), like any cfg knob', () => {
+    const { root, sessions } = mount();
+    q<HTMLButtonElement>(root, '#reinforcepanel .chip[data-cm="off"]').click();
     click(refCell(root));
     step(root);
     // ADVERSARIAL: the live session's reference is a construction-time snapshot — bonus still shown

@@ -5,6 +5,7 @@
 // the heavy optimizer state. Panels subscribe and re-render on notify; the rAF loop bumps `tick`.
 
 import type { SessionResult } from '../optim/session';
+import type { CoincidenceSetting } from '../persistence/prefs';
 import type { SessionApi } from './sessionApi';
 
 export type RunMode = 'idle' | 'running' | 'paused' | 'done';
@@ -31,11 +32,12 @@ export interface AppState {
    *  (prefs) but — unlike the live knobs above — applies only at the NEXT session (Reset / new
    *  seed): sessions snapshot their cfg at construction (spec: carrier toggles). */
   disabledCarriers: readonly string[];
-  /** PENDING reinforcement toggles (prefs-backed, next-session, same pattern as disabledCarriers):
-   *  matchBonus → cfg.aggregation.matchBonus (independent doubling credited); coincidence →
-   *  cfg.bonuses.coincidence.weight (off ⇒ 0, on ⇒ the config default — arranged equality). */
+  /** PENDING reinforcement controls (prefs-backed, next-session, same pattern as
+   *  disabledCarriers): matchBonus → cfg.aggregation.matchBonus (independent doubling credited);
+   *  coincidence → cfg.bonuses.coincidence {weight, mode}: 'off' ⇒ weight 0 (the term vanishes),
+   *  'weak'/'strong' ⇒ the config default weight with that mode (arranged equality, CONCEPT §7). */
   matchBonus: boolean;
-  coincidence: boolean;
+  coincidence: CoincidenceSetting;
   loaded: SessionResult | null; // a loaded saved result being reviewed (overrides the live figure)
   saveCount: number;
 }

@@ -78,6 +78,12 @@ src/
                              every score, LSE mean, penalty, and count runs over this set,
                              never the raw census. carrierFor(id) resolves aliases too.
       readings.ts            proj∥, proj⊥, magnitude, angle as pure vector ops.
+      paths.ts               v2.2 strong coincidence: each length-class reading's MEASUREMENT
+                             PATH (the page segment its reading procedure traces — plumb,
+                             radial ruler, ink, dogleg leg), derived structurally from
+                             (anchor, part, reading) against cfg.frame/cfg.page; the smooth
+                             orientation-symmetric overlap kernel + ink gate. Value + exact
+                             twins; shared subexpressions cached per eval.
     fidelity/
       ladder.ts              τ_sym (fOrd + smooth fold), fInt = r², signed-safe fRatio (base·coh),
                              plus lseMean/smoothAbs helpers (composed from gradchecked primitives):
@@ -300,9 +306,51 @@ never verify by eyeballing. Add to this list as the system grows.
   high a weight stabilizes collapse traps at FULL session depth — dot plots (segments shrunk to
   points make start≡mid≡end coincide in both axes) and mid-anchored bars (a lone mid-y ≡ length
   pair under the best-pair-dominant LSE). At the default (0.2) all six full-depth acceptance
-  seeds end legible; 0.3 re-opens the traps (seeds 1, 5). Statically golden bars outrank both
-  traps at every weight in [0, 0.3] — the hazard is dynamical only. The strong same-ink/path
-  version should close the collapse loophole outright.
+  seeds end legible; 0.3 re-opens the traps (seeds 1, 5) IN WEAK MODE. Statically golden bars
+  outrank both traps at every weight in [0, 0.3] — the hazard is dynamical only. The strong
+  same-ink-path mode (below) closes the collapse loophole at the formula layer.
+
+**Strong coincidence (same-ink-path, `bonuses.coincidence.mode`, 2026-07-03)**
+- Measurement paths match the design table under the v1 geometry EXACTLY (pinned endpoints):
+  point x = ruler from the perp axis at the point's height; point y = plumb from the frame
+  axis; fr·dist = radial ruler from O; length = the segment's own ink; run/rise = the dogleg
+  legs with the corner at `(end_x, start_y)` (parallel leg walked first — the convention).
+  Angle readings and origin-free page point projections return null (no linear ink-path) and
+  their pairs keep the WEAK formula bit-exactly, in strong mode.
+- Overlap kernel: identical paths ⇒ ov ≈ 1 (ε-rounding ≤ 1e-6); orientation symmetry is
+  BIT-exact (either path traced backwards); monotone decay at σ_path scale; smooth in all 8
+  endpoint coordinates (gradcheck).
+- Ink gate: exactly-collapsed segments ⇒ g = 0 EXACTLY (the dot-plot trap earns 0 strong
+  overlap on every path pair); near-collapse pays proportionally (3-unit whiskers keep < 1/3
+  of their weak coincidence).
+- The promised consequences hold and are pinned (`core/strongCoincidence.test.ts`): grounded
+  golden's end-y ≡ rise ≡ length triple has overlap = mean ink gate (ov_i = 1); FLOATING bars
+  kill (end-y, length) < 1e-12 while (rise, length) survives bit-for-bit (a vertical segment's
+  rise leg IS its ink); the mid-anchor trap's lone (mid-y, length) pair is path-killed
+  (ink 0.09); spoke plots earn (fr·end dist, length) legitimately; verticality's
+  start-x ≡ end-x rulers at different heights earn ~0 while the axis identity
+  start-x ≡ fr·start-dist carries golden's order coincidence.
+- Trap regression (executed, `scratch/verify_strong_trap_regression.out.txt`): at the weight
+  that trapped weak mode (0.3), the traps' weak bonuses ≈ golden's (dot 0.201 / mid-anchor
+  0.201 vs golden 0.226); under strong the traps collapse (dot 0.0008, mid-anchor 0.031 —
+  the residue is the LEGITIMATE rise ≡ length) while golden keeps 0.088 and outranks both.
+- Loophole hunt (executed, `scratch/verify_strong_loopholes.out.txt`): figures that farm
+  REAL strong overlap (y-axis pileup, single origin ray) buy their eq = 1 / ink ≈ 1 pairs by
+  surrendering the order relation entirely — reward 0.80–0.92 vs golden 1.49 buries them at
+  any weight in [0, 0.3]; strong pairs are parasitic on already-earned q, so no degenerate
+  out-scores golden (ranking probe: both gate datasets, all degenerates + traps, 50 randoms).
+- Mode 'weak' builds a BIT-IDENTICAL tape to pre-strong HEAD (byte-identical exact totals,
+  Value totals, and full 48-leaf gradient digests on 5 figures at weight 0.2 AND 0; twin
+  fingerprint run in a HEAD worktree); weight 0 in strong mode = weight 0 in weak mode (same
+  node count, root stays `sub`). Strong tape ≤ 2.2× weak nodes (overlaps cached per unordered
+  pair across relations, like eq).
+- Value ≈ exact lockstep and the full-score gradcheck hold with strong mode ACTIVE (jittered
+  golden AND jittered floating baseline — ov/gate kernels mid-slope); the grounding pull
+  ∂total/∂start_y is strictly stronger under strong than weak on floating baselines.
+- UI (reinforcement mini-panel): the coincidence pref is a 3-state selector off/weak/strong
+  (exclusive chips, pending/live semantics as the carrier strip); legacy boolean prefs migrate
+  'true' → 'weak', 'false' → 'off', garbage → config default; the score panel's bonus row
+  names the mode it was scored under and path-bearing pairs display their ink factor.
 
 **Optimizer (v2 — played-out trajectories)**
 - Every trajectory is independent: its own Adam state, anneal clock, plateau detector; no

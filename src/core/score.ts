@@ -23,6 +23,15 @@
 // cached per carrier pair across relations (sales' pairs are a subset of order's). weight = 0 skips
 // the term entirely: no pair nodes on the tape, total stays bit-exactly reward − penalty.
 //
+// STRONG mode (config.bonuses.coincidence.mode, 2026-07-03; CONCEPT §7): the same-ink-path version.
+//   pairScore = eq · strongOverlap(m1,m2) · q1^p · q2^p,  strongOverlap = mean_i( ov_i · g_i )
+// with ov_i the smooth orientation-symmetric overlap of the two readings' MEASUREMENT PATHS on
+// item i and g_i the ink gate ‖disp_i‖²/(‖disp_i‖²+θ_ink²) — see measurements/paths.ts. Strong =
+// weak × alignment × ink: it tells an AXIS (identity by construction) from a COLLAPSE (identity by
+// degeneration — the dot-plot / mid-anchor traps of the weak version). Pairs with no linear
+// ink-path (angle class) keep the weak formula. The overlap is computed ONCE per unordered pair
+// and cached across relations, exactly like eq; mode 'weak' builds a bit-identical tape to v2.2.
+//
 // FIXED scoring (config.scoring = 'fixed') collapses each relation to its single configured carrier,
 // scored with the SAME v2 ladder + salience (LSE over one cell = the cell) — kept for comparability.
 //
@@ -73,6 +82,12 @@ import {
   type AssignmentMap,
   type AssignmentPolicy,
 } from './assignment';
+import {
+  MeasurementPathsValue,
+  MeasurementPathsExact,
+  strongOverlap,
+  strongOverlapN,
+} from './measurements/paths';
 
 /** The distinct carriers a relation is scored against, per the scoring mode. May be EMPTY when the
  *  carrier toggles (cfg.carriers.disabled) exclude everything commensurable — the relation then
@@ -199,11 +214,32 @@ export function scoreValue(
   // commensurable carriers with the SAME unit class, scored eq·qa^p·qb^p on the ALREADY-extracted
   // vectors and ALREADY-computed cells (no re-extraction), aggregated by the same mean-form LSE.
   // weight === 0 skips the block entirely — zero pair nodes on the tape, total root stays sub().
+  // mode 'strong' multiplies each PATH-BEARING pair by its cached ink-path overlap (header); the
+  // weak branch builds the exact v2.2 nodes, so mode 'weak' stays bit-identical.
   const wCoin = cfg.bonuses.coincidence.weight;
   let bonus: Value = val(0);
   if (wCoin !== 0) {
-    const p = cfg.bonuses.coincidence.fidelityGateP;
+    const coin = cfg.bonuses.coincidence;
+    const p = coin.fidelityGateP;
     const eqCache = new Map<string, Value>();
+    // Strong-mode machinery, none of it built in weak mode: shared path/gate builder + the
+    // per-unordered-pair overlap cache (null = no linear ink-path ⇒ weak formula stands).
+    const paths = coin.mode === 'strong' ? new MeasurementPathsValue(leaves, frame, page) : null;
+    const gate = paths !== null ? paths.inkGate(coin.thetaInk) : null;
+    const ovCache = new Map<string, Value | null>();
+    const overlapFor = (key: string, a: Carrier, b: Carrier): Value | null => {
+      let ov = ovCache.get(key);
+      if (ov === undefined) {
+        const pa = paths!.pathsFor(a.measurement);
+        const pb = paths!.pathsFor(b.measurement);
+        ov =
+          pa !== null && pb !== null
+            ? strongOverlap(pa, pb, gate!, coin.sigmaPath, cfg.eps.absSmooth)
+            : null;
+        ovCache.set(key, ov);
+      }
+      return ov;
+    };
     let coinSum: Value = val(0);
     for (const { rel, cands } of perRel) {
       const pairScores: Value[] = [];
@@ -220,7 +256,9 @@ export function scoreValue(
           }
           const qa = cells.get(a.id)!.q.get(rel.key)!;
           const qb = cells.get(b.id)!.q.get(rel.key)!;
-          pairScores.push(mul(eq, mul(pow(qa, p), pow(qb, p))));
+          const ov = paths !== null ? overlapFor(key, a, b) : null;
+          const gq = mul(pow(qa, p), pow(qb, p));
+          pairScores.push(ov !== null ? mul(eq, mul(ov, gq)) : mul(eq, gq));
         }
       }
       if (pairScores.length > 0) coinSum = add(coinSum, lseMean(pairScores, cfg.aggregation.beta));
@@ -276,7 +314,11 @@ export interface CoincidencePair {
   aLabel: string;
   bLabel: string;
   eq: number; // equality kernel ∈ [0,1] (1 = same number in the same page units, per item)
-  contribution: number; // pairScore = eq·qa^p·qb^p — this pair's entry in the relation's pair-LSE
+  contribution: number; // pairScore — this pair's entry in the relation's pair-LSE
+  /** STRONG mode only: the ink-path factor strongOverlap = mean_i(ov_i·g_i) ∈ [0,1] that entered
+   *  contribution. Absent in weak mode and on no-linear-path (angle-class) pairs, whose strong
+   *  contribution is the weak formula (measurements/paths.ts header). */
+  overlap?: number;
 }
 
 /** The coincidence bonus breakdown (config.bonuses.coincidence). */
@@ -371,8 +413,25 @@ export function scoreExact(
   const wCoin = cfg.bonuses.coincidence.weight;
   const bonuses: BonusBreakdown = { coincidence: 0, relationCoin: [], pairs: [] };
   if (wCoin !== 0) {
-    const p = cfg.bonuses.coincidence.fidelityGateP;
+    const coin = cfg.bonuses.coincidence;
+    const p = coin.fidelityGateP;
     const eqCache = new Map<string, number>();
+    const paths = coin.mode === 'strong' ? new MeasurementPathsExact(figure, frame, page) : null;
+    const gate = paths !== null ? paths.inkGate(coin.thetaInk) : null;
+    const ovCache = new Map<string, number | null>();
+    const overlapFor = (key: string, a: Carrier, b: Carrier): number | null => {
+      let ov = ovCache.get(key);
+      if (ov === undefined) {
+        const pa = paths!.pathsFor(a.measurement);
+        const pb = paths!.pathsFor(b.measurement);
+        ov =
+          pa !== null && pb !== null
+            ? strongOverlapN(pa, pb, gate!, coin.sigmaPath, cfg.eps.absSmooth)
+            : null;
+        ovCache.set(key, ov);
+      }
+      return ov;
+    };
     let coinSum = 0;
     for (const { rel, cands } of perRel) {
       const pairScores: number[] = [];
@@ -390,9 +449,11 @@ export function scoreExact(
           }
           const qa = cells.get(a.id)!.q.get(rel.key)!;
           const qb = cells.get(b.id)!.q.get(rel.key)!;
-          const contribution = eq * Math.pow(qa, p) * Math.pow(qb, p);
+          const ov = paths !== null ? overlapFor(key, a, b) : null;
+          const contribution =
+            (ov !== null ? eq * ov : eq) * Math.pow(qa, p) * Math.pow(qb, p);
           pairScores.push(contribution);
-          pairRows.push({
+          const row: CoincidencePair = {
             key: rel.key,
             a: a.id,
             b: b.id,
@@ -400,7 +461,9 @@ export function scoreExact(
             bLabel: b.label,
             eq,
             contribution,
-          });
+          };
+          if (ov !== null) row.overlap = ov;
+          pairRows.push(row);
         }
       }
       const value = lseMeanN(pairScores, cfg.aggregation.beta);

@@ -12,13 +12,21 @@
 
 import { describe, it, expect } from 'vitest';
 import { renderScorePanel, type ScorePanelData } from './scorePanel';
+import { config, type Config } from '../config';
 import { ScaleType } from '../core/scale';
 import { scoreExact, type Breakdown, type CarrierScore } from '../core/score';
 import { goldenBarChart, wellSeparatedData } from '../core/fixtures';
 
-/** Render helper: coincidenceWeight defaults to 0 (the fixture's disabled-term shape). */
-function panel(root: HTMLElement, d: Omit<ScorePanelData, 'coincidenceWeight'> & { coincidenceWeight?: number }): void {
-  renderScorePanel(root, { coincidenceWeight: 0, ...d });
+/** Render helper: coincidenceWeight defaults to 0 (the fixture's disabled-term shape) and
+ *  coincidenceMode to 'weak' (the config default / pre-mode-snapshot fallback). */
+function panel(
+  root: HTMLElement,
+  d: Omit<ScorePanelData, 'coincidenceWeight' | 'coincidenceMode'> & {
+    coincidenceWeight?: number;
+    coincidenceMode?: 'weak' | 'strong';
+  },
+): void {
+  renderScorePanel(root, { coincidenceWeight: 0, coincidenceMode: 'weak', ...d });
 }
 
 function row(p: Partial<CarrierScore> & { id: string; label: string }): CarrierScore {
@@ -188,18 +196,33 @@ describe('score panel: coincidence bonus (config.bonuses.coincidence)', () => {
     expect(root.querySelector('.coinline')).toBeNull();
   });
 
-  it('renders the bonus row (value + weight, like the data-ink row) when active', () => {
+  it('renders the bonus row (MODE + value + weight, like the data-ink row) when active', () => {
     const root = document.createElement('div');
     panel(root, { breakdown: withBonus(), steps: 1, status: 'running', coincidenceWeight: 0.3 });
     const row = root.querySelector('.bonusrow')!;
     expect(row).not.toBeNull();
-    expect(row.textContent).toContain('coincidence bonus');
+    expect(row.textContent).toContain('coincidence bonus (weak)'); // names the running formula
     expect(row.textContent).toContain('w 0.3');
     expect(row.textContent).toContain('+0.320'); // the WEIGHTED term that enters total, shown +
     // …and the data-ink penalty row is still there, untouched
     const pens = [...root.querySelectorAll('.penrow')].filter((p) => !p.classList.contains('bonusrow'));
     expect(pens.length).toBe(1);
     expect(pens[0]!.textContent).toContain('data-ink penalty');
+  });
+
+  it('names STRONG mode on the bonus row when the breakdown was scored under it', () => {
+    const root = document.createElement('div');
+    panel(root, {
+      breakdown: withBonus(),
+      steps: 1,
+      status: 'running',
+      coincidenceWeight: 0.2,
+      coincidenceMode: 'strong',
+    });
+    const row = root.querySelector('.bonusrow')!;
+    expect(row.textContent).toContain('coincidence bonus (strong)');
+    expect(row.textContent).not.toContain('(weak)');
+    expect(row.textContent).toContain('w 0.2');
   });
 
   it('lists each relation\'s top pairs as "aLabel ≡ bLabel eq" under THAT relation only', () => {
@@ -219,6 +242,29 @@ describe('score panel: coincidence bonus (config.bonuses.coincidence)', () => {
     expect(orderLine.textContent).not.toContain('length');
   });
 
+  it('STRONG pairs append their ink-path overlap; no-path (angle-fallback) pairs do not', () => {
+    const b = withBonus();
+    // strong-mode core contract: path-bearing pairs carry `overlap`; angle-class pairs (weak
+    // fallback — no linear ink-path) omit it even in strong mode
+    b.bonuses.pairs[0]!.overlap = 0.97;
+    b.bonuses.pairs[1]!.overlap = 0.12;
+    // pairs[2] (order relation) stays overlap-less: the angle-fallback shape
+    const root = document.createElement('div');
+    panel(root, {
+      breakdown: b,
+      steps: 1,
+      status: 'running',
+      coincidenceWeight: 0.2,
+      coincidenceMode: 'strong',
+    });
+    const salesLine = root.querySelectorAll('.coinline')[0]!;
+    expect(salesLine.textContent).toContain('end y ≡ length 0.98 · ink 0.97');
+    expect(salesLine.textContent).toContain('rise ≡ length 0.91 · ink 0.12'); // shown even when low
+    const orderLine = root.querySelectorAll('.coinline')[1]!;
+    expect(orderLine.textContent).toContain('start x ≡ end x 1.00');
+    expect(orderLine.textContent).not.toContain('ink'); // no fabricated overlap on fallback pairs
+  });
+
   it('a REAL default-config scoreExact breakdown shows the bonus row and coincident lines', () => {
     const data = wellSeparatedData();
     const b = scoreExact(goldenBarChart(data), data); // defaults: the term is active
@@ -231,6 +277,34 @@ describe('score panel: coincidence bonus (config.bonuses.coincidence)', () => {
     );
     expect(root.querySelectorAll('.coinline').length).toBeGreaterThan(0);
     expect(root.querySelector('.coinline')!.textContent).toContain('≡');
+  });
+
+  it('a REAL STRONG-mode scoreExact breakdown renders overlaps on its pair lines (no core drift)', () => {
+    const cfg: Config = {
+      ...config,
+      bonuses: {
+        ...config.bonuses,
+        coincidence: { ...config.bonuses.coincidence, mode: 'strong' },
+      },
+    };
+    const data = wellSeparatedData();
+    const b = scoreExact(goldenBarChart(data), data, cfg);
+    const withOverlap = b.bonuses.pairs.filter((p) => p.overlap !== undefined);
+    expect(withOverlap.length).toBeGreaterThan(0); // grounded bars have path-bearing pairs
+    const root = document.createElement('div');
+    panel(root, {
+      breakdown: b,
+      steps: 0,
+      status: 'idle',
+      coincidenceWeight: cfg.bonuses.coincidence.weight,
+      coincidenceMode: 'strong',
+    });
+    expect(root.querySelector('.bonusrow')!.textContent).toContain('coincidence bonus (strong)');
+    const lines = [...root.querySelectorAll('.coinline')].map((l) => l.textContent!).join('\n');
+    for (const p of withOverlap) {
+      // every displayed overlap is the CORE's number, verbatim at 2 decimals
+      expect(lines).toContain(`${p.aLabel} ≡ ${p.bLabel} ${p.eq.toFixed(2)} · ink ${p.overlap!.toFixed(2)}`);
+    }
   });
 
   it('tolerates a STALE persisted breakdown with no bonuses field (Load of a pre-bonus save)', () => {

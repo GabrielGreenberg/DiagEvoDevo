@@ -159,7 +159,9 @@ describe('prefs: persistent disabledCarriers (readings toggles)', () => {
   });
 });
 
-describe('prefs: persistent reinforcement toggles (matchBonus / coincidence)', () => {
+describe('prefs: persistent reinforcement controls (matchBonus / coincidence)', () => {
+  const COIN_KEY = 'diagram-evolver:prefs:coincidence';
+
   it('matchBonus round-trips BOTH boolean values exactly (reload semantics)', () => {
     expect(loadMatchBonus()).toBeNull(); // absent → caller falls back to config default
     saveMatchBonus(false); // false is a REAL stored state, never confused with absence
@@ -170,43 +172,60 @@ describe('prefs: persistent reinforcement toggles (matchBonus / coincidence)', (
     expect(loadMatchBonus()).toBeNull();
   });
 
-  it('coincidence round-trips BOTH boolean values exactly (reload semantics)', () => {
-    expect(loadCoincidence()).toBeNull();
-    saveCoincidence(false);
-    expect(loadCoincidence()).toBe(false);
-    saveCoincidence(true);
-    expect(loadCoincidence()).toBe(true);
+  it('coincidence round-trips ALL THREE settings exactly (reload semantics)', () => {
+    expect(loadCoincidence()).toBeNull(); // absent → caller falls back to config default
+    for (const mode of ['off', 'weak', 'strong'] as const) {
+      saveCoincidence(mode); // each setting is a REAL stored state, never confused with absence
+      expect(loadCoincidence()).toBe(mode);
+    }
+    saveCoincidence('weak');
+    expect(loadCoincidence()).toBe('weak'); // last write wins
     clearCoincidence();
     expect(loadCoincidence()).toBeNull();
   });
 
-  it('refuses to persist garbage: non-boolean values leave the store untouched', () => {
+  it('MIGRATES the legacy boolean pref: stored "true" reads as weak, "false" as off', () => {
+    // Through v2.2 the pref was a boolean and 'on' meant the weak formula — the only mode then.
+    localStorage.setItem(COIN_KEY, 'true');
+    expect(loadCoincidence()).toBe('weak');
+    localStorage.setItem(COIN_KEY, 'false');
+    expect(loadCoincidence()).toBe('off');
+    // a save in the new scheme overwrites the legacy serialization for good
+    saveCoincidence('strong');
+    expect(localStorage.getItem(COIN_KEY)).toBe('strong');
+    expect(loadCoincidence()).toBe('strong');
+  });
+
+  it('refuses to persist garbage: non-setting values leave the store untouched', () => {
     saveMatchBonus(false);
-    saveCoincidence(false);
+    saveCoincidence('strong');
     saveMatchBonus('yes' as unknown as boolean);
     saveMatchBonus(1 as unknown as boolean);
-    saveCoincidence(0 as unknown as boolean);
-    saveCoincidence(null as unknown as boolean);
+    saveCoincidence('sorta' as never); // not a setting
+    saveCoincidence('OFF' as never); // case matters: only the canonical serialization counts
+    saveCoincidence(true as never); // the OLD boolean API shape must not sneak back in
+    saveCoincidence(null as never);
     expect(loadMatchBonus()).toBe(false);
-    expect(loadCoincidence()).toBe(false);
+    expect(loadCoincidence()).toBe('strong');
   });
 
   it('garbage IN storage reads as null (fallback to config default)', () => {
-    for (const KEY of ['diagram-evolver:prefs:matchBonus', 'diagram-evolver:prefs:coincidence']) {
-      localStorage.setItem(KEY, 'TRUE'); // case matters: only the canonical serialization counts
-      localStorage.setItem(KEY, '1');
-      localStorage.setItem(KEY, 'not-a-bool');
-    }
+    localStorage.setItem('diagram-evolver:prefs:matchBonus', 'TRUE'); // only canonical counts
     expect(loadMatchBonus()).toBeNull();
-    expect(loadCoincidence()).toBeNull();
+    localStorage.setItem('diagram-evolver:prefs:matchBonus', '1');
+    expect(loadMatchBonus()).toBeNull();
+    for (const junk of ['TRUE', '1', 'Strong', 'WEAK', 'medium', 'not-a-mode', '']) {
+      localStorage.setItem(COIN_KEY, junk);
+      expect(loadCoincidence()).toBeNull();
+    }
   });
 
-  it('the two toggles are independent of each other AND of the other preferences', () => {
+  it('the two controls are independent of each other AND of the other preferences', () => {
     saveMatchBonus(false);
-    saveCoincidence(false);
+    saveCoincidence('off');
     saveMaxSteps(777);
     clearMatchBonus();
-    expect(loadCoincidence()).toBe(false); // clearing one never clobbers the other
+    expect(loadCoincidence()).toBe('off'); // clearing one never clobbers the other
     expect(loadMatchBonus()).toBeNull();
     clearCoincidence();
     expect(loadMaxSteps()).toBe(777); // …and the unrelated prefs survive both

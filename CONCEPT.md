@@ -345,8 +345,9 @@ and **verifiability** (a reader can check an identity at a glance — the readin
 *commute*). Grounding (`start y ≡ 0`), verticality (`start x ≡ end x`), and shared
 baselines are the same species: classic chart virtues are heaps of enacted equations.
 
-The **weak (same-magnitude) version** is implemented; per relation R, over unordered
-same-unit-class pairs of its commensurable distinct carriers:
+Two formulas are implemented, selected by `bonuses.coincidence.mode` (and the GUI's
+off/weak/strong selector). The **weak (same-magnitude) version**; per relation R, over
+unordered same-unit-class pairs of its commensurable distinct carriers:
 
 ```
 pair(m₁,m₂) = eq(c₁,c₂) · q₁ᵖ · q₂ᵖ        eq = exp( −mean_i (c₁ᵢ−c₂ᵢ)² / 2σ_eq² )
@@ -362,16 +363,62 @@ the structural dedup and are one carrier — they cannot pair. Merely *proportio
 (c₂ = 2c₁) earn ≈ 0, with a smooth gradient as scales converge — the pull that walks an
 offset reading down to the baseline.
 
-Two verified caveats. **(i) The weight is a basin-selection dial, not a truth dial**
-(cf. §8's data-ink precedent): statically, legible fixtures out-rank every degenerate at
-any weight in [0, 0.3], but at w = 0.3 full-depth optimization stabilized two
+Two verified caveats of the weak formula. **(i) The weight is a basin-selection dial, not
+a truth dial** (cf. §8's data-ink precedent): statically, legible fixtures out-rank every
+degenerate at any weight in [0, 0.3], but at w = 0.3 full-depth optimization stabilized two
 *collapse-coincidence traps* (a dot plot whose shrunken segments get `start ≡ mid ≡ end`
 for free; mid-anchored floating bars locked by a lone `mid y ≡ length` pair) — w = 0.2
 restores 6/6 legible endpoints. **(ii) The weak version cannot distinguish a collapse
 (identities by degeneration) from arranged commuting readings (identities by
-construction).** The **strong version** — requiring the readings' measurement *paths* to
-coincide as ink on the page, weak + alignment — is the principled resolution, and pairs
-naturally with the movable frame (M8). Registered open question.
+construction).** Same-magnitude equality is *numerical*; nothing in it says the two
+procedures agree about anything **visible**.
+
+The **strong (same-ink-path) version** (implemented 2026-07-03; the formerly registered
+open question is CLOSED) is the principled resolution. A reading procedure, actually
+performed, traces a piece of ink on the page — its **measurement path**, a segment [A, B]
+derived structurally from (anchor, part, reading) against the posited frame (origin O,
+direction u, w = u⊥ — nothing hard-codes the v1 axes, so the map survives the movable
+frame, M8). The catalogue for length-class readings (v1 geometry in parentheses):
+
+- **point x** of P — the ruler from the perp axis at the point's height:
+  A = O + ((P−O)·w)·w, B = P   (A = (0, P_y), B = (P_x, P_y));
+- **point y** of P — the plumb from the frame axis: A = O + ((P−O)·u)·u, B = P
+  (A = (P_x, 0), B = (P_x, P_y));
+- **fr·dist** of P — the radial ruler: A = O, B = P;
+- **length** — the segment's own ink: A = start, B = end;
+- **run / rise** — the two legs of the dogleg with corner C = start + ((end−start)·d)·d:
+  run = [start, C], rise = [C, end]. **Convention: the parallel leg is walked first**, so
+  C = (end_x, start_y) in v1 — a vertical bar's rise leg IS its ink, grounded or not.
+
+Angle readings have no linear ink-path (a bearing's ink is an *arc* — its strong theory
+awaits arcs), and an origin-free page point projection has no ruler zero; such pairs keep
+the weak formula in strong mode. Two paths coincide via a smooth, orientation-symmetric
+**overlap kernel** (a path traced backwards is the same ink):
+
+```
+ov_i = exp( −min(‖A₁−A₂‖² + ‖B₁−B₂‖², ‖A₁−B₂‖² + ‖B₁−A₂‖²) / 2σ_path² )   (smooth min)
+g_i  = ‖disp_i‖² / (‖disp_i‖² + θ_ink²)                                     (ink gate)
+strongOverlap(m₁,m₂) = mean_i( ov_i · g_i )
+pair(m₁,m₂) = eq(c₁,c₂) · strongOverlap(m₁,m₂) · q₁ᵖ · q₂ᵖ                 (strong mode)
+```
+
+**Strong = weak × alignment × ink.** The ink gate is the collapse killer: a segment shrunk
+to a point has every point-reading path trivially coincident, and g = 0 refuses all of it —
+identity must be witnessed by visible extent. What it fixes, executed: at w = 0.3 the two
+traps' weak bonuses ≈ golden's (0.201 vs 0.226 — the blind spot); under strong the dot
+plot's bonus collapses to 0.0008 (the gate zeroes every pair exactly), the mid-anchor's to
+0.031 — and the residue is the *legitimate* `rise ≡ length` (any vertical segment enacts
+it in its own ink), not the trap pair `mid-y ≡ length` (path-killed: the plumb rises from
+the axis, the ink floats; ink factor 0.09). Golden keeps its grounded triple (ov_i = 1
+exactly; the pair pays only the ink gate on the dataset's smallest bars) plus the axis
+identity `start-x ≡ fr·start-dist` — a grounded start's x-ruler IS the radial ruler, an
+identity by construction. Verticality's `start-x ≡ end-x` earns ~0 in strong mode (two
+rulers at different heights are not the same ink) — verticality remains rewarded as
+parallelism through the reward matrix, not as coincidence. Figures that farm REAL overlap
+(all bars piled on the y-axis; one ray through the origin) buy it by surrendering the
+order relation — the strong bonus is parasitic on already-earned fidelity (q is in the
+gate), so degenerate ink-farms stay buried by lost reward. Default mode is 'weak' (the
+acceptance-validated behavior); strong is the user-selectable resolution of caveat (ii).
 
 Empirical note (probe, 2026-07-02): with the bonus on, every evolved endpoint earns
 coincidences and 3–4/6 seeds build the full extent≡position stack — but consistently for

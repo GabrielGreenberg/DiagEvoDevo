@@ -46,6 +46,19 @@ export function spreadOf(c: Value[], eps: number): Value {
   return sqrt(add(variance(c), val(eps)));
 }
 
+/** Smooth min(a,b) = (a + b − smoothAbs(a−b, ε))/2: differentiable everywhere (at a = b the
+ *  crossing is rounded by ε, biasing DOWN by at most √ε/2 — vanishing as ε→0). Used by the strong
+ *  coincidence overlap kernel to pick the closer of the two path-endpoint pairings. */
+export function smoothMin(a: Value, b: Value, eps: number): Value {
+  return div(sub(add(a, b), smoothAbs(sub(a, b), eps)), val(2));
+}
+
+/** Exact twin of smoothMin (same rounded-crossing formula, NOT Math.min — lockstep by design). */
+export function smoothMinN(a: number, b: number, eps: number): number {
+  const d = a - b;
+  return (a + b - Math.sqrt(d * d + eps)) / 2;
+}
+
 /**
  * Smooth-max aggregation: LSE(q; β) = (1/β)·log(mean_i exp(β·qᵢ)).
  * Lies in [min q, max q] (mean-form: ≤ max, so 1−LSE ≥ 0 for q ∈ [0,1]); strictly increasing in

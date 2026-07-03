@@ -18,10 +18,12 @@
 //     but applies at the NEXT session only: newSession composes {...config, carriers: {disabled}}
 //     for session construction, while the panel/chips read the LIVE objective from the SESSION's
 //     snapshotted cfg, so the display never lies about the running objective.
-//   • REINFORCEMENT TOGGLES (reinforcement mini-panel) — "matches" (aggregation.matchBonus) and
-//     "coincidence" (bonuses.coincidence.weight: off ⇒ 0, on ⇒ the config default). Exactly the
-//     carrier-toggle pattern: persisted immediately (prefs), composed into the NEXT session's cfg,
-//     live values read back from session.cfg (pending chips + hint while they differ).
+//   • REINFORCEMENT CONTROLS (reinforcement mini-panel) — "matches" (aggregation.matchBonus,
+//     a toggle) and the coincidence 3-state selector (off ⇒ weight 0; weak/strong ⇒ the config
+//     default weight with that bonuses.coincidence.mode — CONCEPT §7). Exactly the carrier-toggle
+//     pattern: persisted immediately (prefs, with legacy-boolean migration), composed into the
+//     NEXT session's cfg, live values read back from session.cfg (pending chips + hint while
+//     they differ).
 //   • REFERENCE CELL (config.ui.showReferenceBars) — a permanent benchmark FIRST in the gallery:
 //     the golden bars of the session's dataset, scored ONCE per session under the SESSION's
 //     snapshotted cfg (so toggles/knobs apply) and rebuilt on Reset / new seeds. Selectable via
@@ -45,6 +47,7 @@ import {
   saveMatchBonus,
   loadCoincidence,
   saveCoincidence,
+  type CoincidenceSetting,
 } from '../persistence/prefs';
 import { createStore, type AppState } from './store';
 import { buildReference, REFERENCE_ID, type ReferenceView } from './reference';
@@ -68,12 +71,13 @@ const defaultFactory: SessionFactory = (figureSeed, dataSeed, cfg) =>
 interface PendingToggles {
   disabledCarriers: readonly string[];
   matchBonus: boolean;
-  coincidence: boolean;
+  coincidence: CoincidenceSetting;
 }
 
 /** The per-session config: base config plus the pending carrier + reinforcement toggles
- *  (sessions snapshot it at construction). coincidence maps to the WEIGHT: off ⇒ 0 (the core
- *  skips the term entirely), on ⇒ the config default. */
+ *  (sessions snapshot it at construction). The coincidence setting maps to {weight, mode}:
+ *  'off' ⇒ weight 0 (the core skips the term entirely; the mode is then irrelevant and keeps the
+ *  config default), 'weak'/'strong' ⇒ the config default weight with that mode (CONCEPT §7). */
 function sessionCfg(t: PendingToggles): Config {
   return {
     ...config,
@@ -83,7 +87,8 @@ function sessionCfg(t: PendingToggles): Config {
       ...config.bonuses,
       coincidence: {
         ...config.bonuses.coincidence,
-        weight: t.coincidence ? config.bonuses.coincidence.weight : 0,
+        weight: t.coincidence === 'off' ? 0 : config.bonuses.coincidence.weight,
+        mode: t.coincidence === 'off' ? config.bonuses.coincidence.mode : t.coincidence,
       },
     },
   };
@@ -93,6 +98,18 @@ function sessionCfg(t: PendingToggles): Config {
  *  stale persisted configSnapshots predate the bonuses block. */
 function coinWeightOf(cfg: Config | undefined): number {
   return cfg?.bonuses?.coincidence?.weight ?? 0;
+}
+
+/** The coincidence mode a breakdown was scored under (display: the bonus row's "(weak/strong)").
+ *  Defensive: snapshots persisted before the mode knob read as 'weak' — the only formula then. */
+function coinModeOf(cfg: Config | undefined): 'weak' | 'strong' {
+  return cfg?.bonuses?.coincidence?.mode ?? 'weak';
+}
+
+/** The LIVE session cfg read back as a selector setting (the panel never lies about the running
+ *  objective): weight 0 ⇒ 'off' — whatever the mode says — else the snapshotted mode. */
+function coinSettingOf(cfg: Config | undefined): CoincidenceSetting {
+  return coinWeightOf(cfg) === 0 ? 'off' : coinModeOf(cfg);
 }
 
 export function startApp(root: HTMLElement, makeSession: SessionFactory = defaultFactory): void {
@@ -145,7 +162,9 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   // canonical id, so the pending set must be canonical or the chips would lie about the census.
   const initialDisabled = canonicalDisabledIds(loadDisabledCarriers() ?? config.carriers.disabled);
   const initialMatchBonus = loadMatchBonus() ?? config.aggregation.matchBonus;
-  const initialCoincidence = loadCoincidence() ?? config.bonuses.coincidence.weight !== 0;
+  // coincidence default = the config's own {weight, mode} read as a setting (weight 0 ⇒ 'off');
+  // stored legacy boolean prefs are migrated inside loadCoincidence ('true' → 'weak').
+  const initialCoincidence = loadCoincidence() ?? coinSettingOf(config);
   const initialSession = makeSession(
     config.seeds.figure,
     config.seeds.data,
@@ -270,20 +289,17 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     },
   });
 
-  // REINFORCEMENT toggles: same pattern as the readings strip — persist immediately (prefs),
+  // REINFORCEMENT controls: same pattern as the readings strip — persist immediately (prefs),
   // pending in the store, bite at the NEXT session (sessions snapshot their cfg).
   mountReinforcement(reinforceRoot, {
-    onToggleReinforcement: (key) => {
-      const s = store.get();
-      if (key === 'matchBonus') {
-        const next = !s.matchBonus;
-        saveMatchBonus(next); // persist FIRST: survives Reset, new seeds, and reloads
-        store.set({ matchBonus: next }); // pending only — the live session is untouched
-      } else {
-        const next = !s.coincidence;
-        saveCoincidence(next); // persist FIRST: survives Reset, new seeds, and reloads
-        store.set({ coincidence: next }); // pending only — the live session is untouched
-      }
+    onToggleMatchBonus: () => {
+      const next = !store.get().matchBonus;
+      saveMatchBonus(next); // persist FIRST: survives Reset, new seeds, and reloads
+      store.set({ matchBonus: next }); // pending only — the live session is untouched
+    },
+    onSelectCoincidence: (mode) => {
+      saveCoincidence(mode); // persist FIRST: survives Reset, new seeds, and reloads
+      store.set({ coincidence: mode }); // pending only — the live session is untouched
     },
   });
 
@@ -313,7 +329,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       pendingMatchBonus: s.matchBonus,
       pendingCoincidence: s.coincidence,
       liveMatchBonus: s.session.cfg.aggregation?.matchBonus ?? true,
-      liveCoincidence: coinWeightOf(s.session.cfg) !== 0,
+      liveCoincidence: coinSettingOf(s.session.cfg),
     });
     caption.textContent = s.loaded
       ? `Loaded — figure seed ${s.loaded.figureSeed}, data seed ${s.loaded.dataSeed}, ${s.loaded.steps} steps${s.loaded.convergedByCap ? ' (by cap)' : ''}`
@@ -348,8 +364,9 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
         breakdown: s.loaded.score,
         steps: s.loaded.steps,
         status: 'loaded',
-        // the cfg the LOADED result was scored under (stale snapshots read as weight 0)
+        // the cfg the LOADED result was scored under (stale snapshots: weight 0, mode 'weak')
         coincidenceWeight: coinWeightOf(s.loaded.configSnapshot),
+        coincidenceMode: coinModeOf(s.loaded.configSnapshot),
       });
       return;
     }
@@ -365,6 +382,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
         steps: st.steps,
         status: `reference bars (not evolved) · ${st.text}`,
         coincidenceWeight: coinWeightOf(s.session.cfg), // the reference scores under session.cfg
+        coincidenceMode: coinModeOf(s.session.cfg),
       });
     } else {
       const sel = s.session.detail(s.selectedId) ?? s.session.detail(all[0]?.id ?? 0);
@@ -376,6 +394,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
           steps: st.steps,
           status: st.text,
           coincidenceWeight: coinWeightOf(s.session.cfg),
+          coincidenceMode: coinModeOf(s.session.cfg),
         });
       }
     }

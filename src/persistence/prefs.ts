@@ -2,9 +2,9 @@
 //
 // User PREFERENCES persisted to localStorage — the per-trajectory step cap (maxSteps), the
 // convergence strictness (plateauRelEps), the disabled-readings set (carrier toggles), and the
-// reinforcement toggles (matchBonus / coincidence). Spec (UI feedback passes): all controls must
-// stick through Reset, new seeds, AND page reloads; precedence is stored value > config default.
-// Values are written on every edit and read once at app start.
+// reinforcement controls (matchBonus toggle / coincidence 3-state setting). Spec (UI feedback
+// passes): all controls must stick through Reset, new seeds, AND page reloads; precedence is
+// stored value > config default. Values are written on every edit and read once at app start.
 
 import { storage } from './storage';
 
@@ -83,10 +83,12 @@ export function clearDisabledCarriers(): void {
   storage()?.removeItem(DISABLED_CARRIERS_KEY);
 }
 
-// ── Reinforcement toggles (matchBonus / coincidence) — boolean prefs, same pattern ────────────
-// Semantics live in src/config.ts: matchBonus → config.aggregation.matchBonus; coincidence →
-// config.bonuses.coincidence.weight (off ⇒ 0, on ⇒ the config default). Like the carrier toggles
-// they persist immediately but bite at the NEXT session (sessions snapshot their cfg).
+// ── Reinforcement controls (matchBonus / coincidence) — same pattern ──────────────────────────
+// Semantics live in src/config.ts: matchBonus → config.aggregation.matchBonus (boolean);
+// coincidence → config.bonuses.coincidence {weight, mode}: 'off' ⇒ weight 0 (the term vanishes),
+// 'weak'/'strong' ⇒ the config default weight with that mode (CONCEPT §7: weak = same-magnitude
+// equality, strong = same-ink-path). Like the carrier toggles they persist immediately but bite
+// at the NEXT session (sessions snapshot their cfg).
 
 /** Shared boolean-pref reader: exactly 'true'/'false' round-trip; anything else is garbage → null
  *  (caller falls back to the config default). */
@@ -110,14 +112,28 @@ export function clearMatchBonus(): void {
   storage()?.removeItem(MATCH_BONUS_KEY);
 }
 
-/** The persisted coincidence toggle (arranged-equality bonus), or null if absent/garbage. */
-export function loadCoincidence(): boolean | null {
-  return loadBool(COINCIDENCE_KEY);
+/** The UI's coincidence setting: the bonus's mode extended with 'off' (weight 0 — no term).
+ *  'weak'/'strong' select config.bonuses.coincidence.mode at the config default weight. */
+export type CoincidenceSetting = 'off' | 'weak' | 'strong';
+
+const isCoincidenceSetting = (x: unknown): x is CoincidenceSetting =>
+  x === 'off' || x === 'weak' || x === 'strong';
+
+/** The persisted coincidence setting (arranged-equality bonus: off / weak / strong), or null if
+ *  absent/garbage. MIGRATION: through v2.2 this pref was a BOOLEAN ('true'/'false'), when the weak
+ *  formula was the only one — legacy 'true' reads as 'weak' and 'false' as 'off', so a stored
+ *  choice survives the upgrade; anything else is garbage → null (config default). */
+export function loadCoincidence(): CoincidenceSetting | null {
+  const raw = storage()?.getItem(COINCIDENCE_KEY) ?? null;
+  if (isCoincidenceSetting(raw)) return raw;
+  if (raw === 'true') return 'weak'; // legacy boolean: on meant the (only) weak formula
+  if (raw === 'false') return 'off';
+  return null;
 }
 
-export function saveCoincidence(on: boolean): void {
-  if (typeof on !== 'boolean') return; // never persist garbage
-  storage()?.setItem(COINCIDENCE_KEY, String(on));
+export function saveCoincidence(mode: CoincidenceSetting): void {
+  if (!isCoincidenceSetting(mode)) return; // never persist garbage
+  storage()?.setItem(COINCIDENCE_KEY, mode);
 }
 
 /** Remove the stored toggle (tests / explicit "back to default"). */

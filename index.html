@@ -120,9 +120,12 @@
       .chip.off { background: transparent; border-color: var(--line); color: var(--muted); text-decoration: line-through; opacity: 0.6; }
       .chip.pending { box-shadow: 0 0 0 1px var(--ord); }
 
-      /* REINFORCEMENT mini-panel (matches / coincidence credit toggles): reuses the readings
-         chip semantics (.off = off next session, .pending = differs from the LIVE objective). */
+      /* REINFORCEMENT mini-panel (matches toggle / coincidence 3-state selector): reuses the
+         readings chip semantics (.off = off next session, .pending = differs from the LIVE
+         objective). Coincidence mode chips are EXCLUSIVE alternatives — an unselected mode is
+         not an "excluded" thing, so no strike-through on those. */
       .reinforce .rgname { flex-basis: 40px; }
+      .reinforce .cmode.off { text-decoration: none; }
 
       /* coincidence bonus row (mirrors .penrow) + per-relation "coincident:" pair lines */
       .bonusrow .bval { margin-left: auto; font-family: ui-monospace, monospace; color: var(--int); }

@@ -143,6 +143,37 @@ export const config = {
       // earn coincidence credit. Equal-but-meaningless (or equal-but-constant) readings earn ~0.
       // Keep p ≥ 1: the pow gradient p·q^(p−1) must stay finite at q = 0.
       fidelityGateP: 2,
+      // mode (CONCEPT §7): WHAT counts as a coincidence of two readings.
+      //   'weak'   — same-magnitude equality of the 12-vectors (the formula above, unchanged; the
+      //              shipped, acceptance-validated v2.2 behavior — hence the default). Its verified
+      //              blind spot: it cannot distinguish an AXIS (identity by construction — two
+      //              reading procedures arranged to trace the same ink) from a COLLAPSE (identity
+      //              by degeneration — a segment shrunk until start ≡ mid ≡ end for free): the
+      //              dot-plot and mid-anchor traps in the weight comment above.
+      //   'strong' — same-INK-PATH equality: pairScore = eq · strongOverlap · q1^p · q2^p, where
+      //              strongOverlap = mean_i( ov_i · g_i ) requires each item's two MEASUREMENT
+      //              PATHS (the ruler each reading procedure lays on the page — see
+      //              measurements/paths.ts) to coincide as ink (ov_i, σ_path below) AND the item's
+      //              segment to have visible extent (g_i, θ_ink below). Everything else — the pair
+      //              set, eq, the q-gate, the pair-LSE, the weight — is IDENTICAL to weak: strong
+      //              = weak × alignment × ink. Angle-class pairs have no linear ink-path and keep
+      //              the weak formula in strong mode (their strong theory awaits arcs; documented
+      //              in paths.ts).
+      mode: 'weak' as 'weak' | 'strong',
+      // σ_path (page units): the ink-alignment tolerance of the strong overlap kernel
+      //   ov_i = exp( −min(‖A₁−A₂‖²+‖B₁−B₂‖², ‖A₁−B₂‖²+‖B₁−A₂‖²) / (2σ_path²) )
+      // (smooth min via smoothAbs, orientation-symmetric: a path traced backwards is the same
+      // ink). Two paths whose endpoints sit within ~σ_path still read as the same ruler; a
+      // baseline floating b units off the axis decays as exp(−b²/2σ_path²) — the smooth
+      // axis-seeking gradient. Same absolute-page-units stance as sigmaEqLen.
+      sigmaPath: 5,
+      // θ_ink (page units): the ink gate g_i = ‖disp_i‖² / (‖disp_i‖² + θ_ink²) — a pair's overlap
+      // on item i counts only in proportion to that segment's visible extent. THE collapse killer
+      // (CONCEPT §7 caveat ii): a segment shrunk to a point has every point-reading path
+      // trivially coincident, and g_i = 0 refuses it all; a bar taller than ~θ_ink keeps g ≈ 1.
+      // Scaled like the reader-resolution θ_len (salience) but deliberately at the sharper
+      // σ-scale: ink smaller than the equality tolerance itself proves nothing.
+      thetaInk: 5,
     },
   },
 
