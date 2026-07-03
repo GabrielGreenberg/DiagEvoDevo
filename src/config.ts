@@ -192,6 +192,8 @@ export const config = {
   eps: {
     // Added to each variance in the r² denominator so a constant figure vector gives
     // F_int → 0 (correct: a flat figure has no interval structure) with a finite gradient.
+    // v2.2: ALSO guards fIntCirc's denominators (Vv+ε and the (cos,sin) covariance determinant
+    // Vc·Vs−c²+ε): a near-constant or rank-1 bearing carrier gives R² → 0 smoothly, never NaN.
     corrVar: 1e-9,
     // Floor inside circularVar's resultant length, avoids sqrt' blow-up at antipodal angles.
     circular: 1e-12,
@@ -295,7 +297,10 @@ export const config = {
 
   // ── Scoring mode ──────────────────────────────────────────────────────────
   // 'comprehensive' (default): each data relation is scored against ALL commensurable measurements,
-  //   summed — the full-matrix homomorphism (sales → 20 ratio-comparable, order → all 26).
+  //   summed — the full-matrix homomorphism. v2.2 (ratio ≤ cyclic restored): sales → all 20
+  //   ratio-or-cyclic raw cells (16 distinct carriers under the v1 geometry), order → all 26 (16
+  //   distinct). No reading is structurally blocked from any relation; exclusions only via
+  //   carriers.disabled below.
   // 'fixed': collapse each relation to a single configured carrier (the earlier bar-chart-only model).
   scoring: 'comprehensive' as 'comprehensive' | 'fixed',
 

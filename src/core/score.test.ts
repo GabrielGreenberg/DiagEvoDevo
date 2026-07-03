@@ -56,9 +56,9 @@ describe('score v2: AUDIT REGRESSION GATE — golden bars beat every winning deg
 });
 
 describe('score v2 (comprehensive): distinct-carrier matrix', () => {
-  it('sales scored vs 12 distinct ratio carriers, order vs all 16; counts come from carriers(cfg)', () => {
+  it('BOTH relations scored vs all 16 distinct carriers (v2.2: ratio ≤ cyclic restored); counts come from carriers(cfg)', () => {
     const b = scoreExact(golden, data);
-    expect(b.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(12);
+    expect(b.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(16);
     expect(b.relations.find((r) => r.key === 'order')!.carriers.length).toBe(16);
     expect(b.distinctCarriers).toBe(carriers(config).length);
     expect(b.distinctCarriers).toBe(16);
@@ -140,7 +140,7 @@ describe('score v2: carrier toggles (cfg.carriers.disabled) — the census shrin
     }
     // counts shrink together: distinct census, sales candidates, order candidates
     expect(off.distinctCarriers).toBe(15);
-    expect(off.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(11);
+    expect(off.relations.find((r) => r.key === 'sales')!.carriers.length).toBe(15);
     expect(off.relations.find((r) => r.key === 'order')!.carriers.length).toBe(15);
     // EXACT consistency: each relation's new LSE equals the LSE over the base qs minus the
     // disabled row — i.e. the mean's N really became N−1 (nothing hardcodes 12/16)
@@ -183,11 +183,16 @@ describe('score v2: carrier toggles (cfg.carriers.disabled) — the census shrin
     expect(off.penalties.find((p) => p.name === 'spuriousness')!.value).toBeCloseTo(ink, 9);
   });
 
-  it('EMPTY-relation guard: disabling ALL ratio carriers zeroes sales — no NaN, quality stays honest', () => {
-    const ratioIds = allCarriers(config)
-      .filter((c) => c.stamp === ScaleType.Ratio)
+  it('EMPTY-relation guard: disabling ALL sales-commensurable carriers zeroes sales — no NaN, quality stays honest', () => {
+    // v2.2: under the DEFAULT geometry sales is commensurable with every distinct carrier (ratio ∪
+    // cyclic = all 16), so emptying sales would empty order too. A SHIFTED frame (origin ≠ 0)
+    // unmerges the page point projections, which stay INTERVAL-stamped — order can read them,
+    // sales cannot. Disabling every ratio+cyclic carrier there empties sales while order survives.
+    const shifted: Config = { ...config, frame: { ...config.frame, origin: [10, 0] } };
+    const salesIds = allCarriers(shifted)
+      .filter((c) => c.stamp === ScaleType.Ratio || c.stamp === ScaleType.Cyclic)
       .map((c) => c.id);
-    const cfg = withOff(ratioIds);
+    const cfg = withOff(salesIds, shifted);
     const b = scoreExact(golden, data, cfg);
     const sales = b.relations.find((r) => r.key === 'sales')!;
     expect(sales.carriers.length).toBe(0);
@@ -268,15 +273,21 @@ describe('score v2: salience gate (audit defect 3: resolution-free fidelity)', (
   };
   it('a sub-legible (sub-pixel) perfect figure earns ≈ 0 on every LENGTH-class carrier', () => {
     const b = scoreExact(scaled(0.001), data); // spans ~0.1 page units ≪ θ_len
-    // sales carriers are ALL length-class → the whole relation is gated to ~0
-    expect(b.relations.find((r) => r.key === 'sales')!.aggregated).toBeLessThan(0.02);
-    // order keeps only its angle-class residue (bearings are scale-free BY DESIGN — a uniform
-    // shrink preserves angular structure; θ_ang gates angle spread, not figure size)
-    for (const c of b.relations.find((r) => r.key === 'order')!.carriers) {
-      if (c.id.includes('angle')) continue;
-      expect(c.q, c.id).toBeLessThan(0.02);
+    // BOTH relations keep only their angle-class residue (bearings are scale-free BY DESIGN — a
+    // uniform shrink preserves angular structure; θ_ang gates angle spread, not figure size).
+    // v2.2: sales includes the cyclic carriers now, so the invariant is stated PER LENGTH-CLASS
+    // carrier, exactly as it always was for order — no length reading survives the shrink.
+    for (const r of b.relations) {
+      for (const c of r.carriers) {
+        if (c.id.includes('angle')) continue;
+        expect(c.q, `${r.key}:${c.id}`).toBeLessThan(0.02);
+      }
     }
-    expect(b.quality).toBeLessThan(0.1);
+    // the surviving residue is honest scale-free structure: atan2(k·v, x) half-tracks sales
+    // (fr·end angle q ≈ 0.48, measured) — bounded well below a legible figure's relation
+    expect(b.relations.find((r) => r.key === 'sales')!.aggregated).toBeLessThan(0.3);
+    expect(b.quality).toBeLessThan(0.2); // was < 0.1 pre-v2.2: the delta IS the angle residue
+    expect(b.quality).toBeLessThan(scoreExact(golden, data).quality / 3); // and stays far below legible
   });
   it('growing the spread recovers the score monotonically (scale is NO LONGER a full symmetry)', () => {
     const rewards = [0.001, 0.01, 0.1, 1].map((k) => scoreExact(scaled(k), data).reward);

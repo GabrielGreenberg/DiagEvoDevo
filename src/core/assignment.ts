@@ -96,7 +96,7 @@ export const BestAssignment: AssignmentPolicy = {
     }));
     let best: AssignmentMap | null = null;
     let bestScore = -Infinity;
-    // enumerate the product of legal candidates (small: ~15 × 21 = 315)
+    // enumerate the product of legal candidates (small: 20 × 26 = 520 under the v2.2 lattice)
     const rec = (i: number, acc: Map<DataRelation['key'], string>): void => {
       if (i === perRelation.length) {
         const s = ctx.scoreOf(acc);

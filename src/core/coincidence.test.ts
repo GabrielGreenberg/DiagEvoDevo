@@ -246,11 +246,14 @@ describe('coincidence: gates — equality without meaning or visibility earns no
     expect(b.bonuses.pairs).toEqual([]);
   });
 
-  it('EMPTY relation (all ratio carriers disabled): relationCoin(sales) = 0, everything finite', () => {
-    const ratioIds = allCarriers(config)
-      .filter((c) => c.stamp === ScaleType.Ratio)
+  it('EMPTY relation (all sales-commensurable carriers disabled): relationCoin(sales) = 0, everything finite', () => {
+    // v2.2: sales reads every default-geometry carrier (ratio ∪ cyclic), so emptying it needs the
+    // shifted-frame census where interval-stamped page projections exist for order to keep.
+    const shifted: Config = { ...config, frame: { ...config.frame, origin: [10, 0] } };
+    const salesIds = allCarriers(shifted)
+      .filter((c) => c.stamp === ScaleType.Ratio || c.stamp === ScaleType.Cyclic)
       .map((c) => c.id);
-    const cfg: Config = { ...config, carriers: { disabled: ratioIds } };
+    const cfg: Config = { ...shifted, carriers: { disabled: salesIds } };
     const b = scoreExact(golden, data, cfg);
     expect(coinOf(b, 'sales')).toBe(0);
     expect(Number.isFinite(b.bonuses.coincidence)).toBe(true);
@@ -290,12 +293,20 @@ describe('coincidence: σ_eq per unit class (page units for lengths, radians for
     expect(eqGaussN(extract(RISE, f), extract(END_Y, f), config.bonuses.coincidence.sigmaEqAngle)).toBeLessThan(1e-300);
   });
 
-  it('widening σ_eqAngle raises ONLY the angle-pair relation; length relations are bit-identical', () => {
+  it('widening σ_eqAngle raises ONLY angle pairs; length-pair eq values are bit-identical', () => {
     const f = tiltedRays();
     const bNarrow = scoreExact(f, data);
     const bWide = scoreExact(f, data, withCoin({ sigmaEqAngle: 2.0 }));
     expect(coinOf(bWide, 'order')).toBeGreaterThan(coinOf(bNarrow, 'order') + 0.05);
-    expect(coinOf(bWide, 'sales')).toBe(coinOf(bNarrow, 'sales')); // sales has no angle pairs
+    // v2.2: sales now HAS angle pairs (its candidates include the cyclic carriers) — but on this
+    // figure the bearings barely track sales (q ≈ 0.12, measured), so the q²-gated sales change is
+    // dust while the order relation moves materially: the gate, not the census, does the work.
+    expect(coinOf(bNarrow, 'sales')).toBeLessThan(1e-3);
+    expect(coinOf(bWide, 'sales')).toBeLessThan(1e-3);
+    expect(coinOf(bWide, 'sales') - coinOf(bNarrow, 'sales')).toBeGreaterThan(0); // eq only widened…
+    expect(coinOf(bWide, 'sales') - coinOf(bNarrow, 'sales')).toBeLessThan(1e-4); // …through the gate
+    // (length pairs are untouched by σ_eqAngle: their exact-σ_len routing is pinned by the
+    // neighboring "LENGTH pair's recorded eq" test)
   });
 });
 

@@ -95,7 +95,7 @@ length are ratio even on a bare page — and why a bar carries proportion with n
 ### The funnel (share this with a colleague)
 `48 free parameters → 312 live measurement-values → distinct carriers (structural dedup, §5) → salience-gated cells → per-relation smooth-max (LSE) → reward − data-ink = 1 score`
 where each data relation is compared, like-with-like, against **every** commensurable *distinct carrier*
-(sales:ratio → the 12 ratio-stamped carriers; order:ordinal → all 16, under the v1 geometry), each comparison
+(v2.2 full chain: BOTH relations → all 16 distinct carriers, under the v1 geometry — §7), each comparison
 graded on its rungs and gated by salience (§6), and the pair axis collapses into the marginals. Within a
 relation the cells aggregate by a **log-sum-exp smooth-max** (§7): one excellent carrier dominates, and every
 further matching carrier still strictly raises the score. Each relation's value is normalized to [0,1] so no
@@ -139,9 +139,9 @@ sampling — so it stays correct when frames move (M8+):
 A merged carrier keeps the **maximum stamp** of its members (e.g. `start x` read against a
 frame origin is *ratio*, not interval — the frame member upgrades the page member), records
 the merged-away cells as aliases, and takes the plain page label. Under the v1 geometry the
-16 distinct carriers stamp as **12 ratio + 4 cyclic**: sales is commensurable with 12,
-order with all 16 (§7). Every mean, LSE, carrier count, and penalty in §§7–8 ranges over
-this set.
+16 distinct carriers stamp as **12 ratio + 4 cyclic**: with the v2.2 full chain (§7) BOTH
+relations are commensurable with all 16. Every mean, LSE, carrier count, and penalty in
+§§7–8 ranges over this set.
 
 ## 6. The fidelity ladder (the graded score)
 
@@ -257,22 +257,39 @@ Treat calibration as a first-class task, not a magic number.
 ## 7. Comprehensive scoring — the LSE aggregation (and the assignment lenses)
 
 Legality is **`type(data) ≤ stamp(measurement)`** (read a stamp down, never up), over the
-v2 reads-down order:
+v2.2 reads-down order:
 
 ```
-ordinal ≤ interval ≤ ratio        (the linear chain)
-ordinal ≤ cyclic                  (and NOTHING else is ≤ cyclic)
+ordinal ≤ interval ≤ ratio ≤ cyclic        (the full chain)
 ```
 
-**Cyclic is demoted** from the v1 top. The v1 argument (a bearing has a true zero — the
-reference direction — so an angle can carry ratio) was confirmed unsound *as implemented*:
-raw atan2 bearings fed into linear statistics hit branch-cut cliffs (a 0.002 rad rotation
-dropped a carrier's reward 5.56 → 0.84), dead zones, and score mirrored dials ≈ 0. Bearings
-may still carry **order** — the intent of the user's "order readable from angles" choice is
-kept — but not interval/ratio until genuine circular rung forms (branch-free circular
-statistics) exist: a **registered open question**. Even ordinal-from-bearings retains the
-branch cut, a documented known limitation. Net commensurability: sales (ratio) → the 15
-ratio cells (**12 distinct carriers**); order (ordinal) → all 26 (**16 distinct**).
+**Cyclic is restored to the top (v2.2)** — the v2 demotion's open question is closed. The v1
+argument stands (a bearing has a true zero — the reference direction — so an angle can carry
+ratio: dials and gauges are legitimate encodings); what was unsound was the *implementation*:
+raw atan2 bearings fed into **linear** statistics hit branch-cut cliffs (a 0.002 rad rotation
+dropped a carrier's reward 5.56 → 0.84), dead zones, and scored mirrored dials ≈ 0. v2
+answered that rung-form defect at the wrong layer (demoting the lattice edge); v2.2 answers
+it at the correct one — the rung **forms** route by the carrier's unit class
+(`fidelity/rungs.ts`):
+
+- **interval on angles** = the Mardia circular–linear correlation
+  `R² = (r_vc² + r_vs² − 2·r_vc·r_vs·r_cs)/(1 − r_cs²)`, `r_vc = corr(v, cos θ)`,
+  `r_vs = corr(v, sin θ)`, `r_cs = corr(cos θ, sin θ)` — wrap-invariant (θ enters only via
+  cos/sin: no cliff), rotation-invariant (a dial's zero is arbitrary — exactly interval's
+  "decodable up to an affine anchor"), direction-symmetric; = 1 iff v is affine in
+  (cos θ, sin θ); a perfect dial θ = k·v + b scores ≈ 1 (0.9948 at a 2.5 rad span);
+- **ratio on angles** = the v2.1 `F_ratio` **unchanged** — its magnitude `√(θ²+ε)` is
+  continuous across the ±π cut and its side-coherence keeps mirrored gauges legible; the one
+  remaining discontinuity (an item crossing |θ| = π flips its side) is localized and bounded
+  by ≈ one item's coherence share — measured Δcell = 1.00 of a 7.5-max cell (whole-figure
+  Δtotal = 0.073), vs v1's Δ4.72 relation collapse (`core/dial.test.ts`);
+- **ordinal on angles** = the raw form; its localized branch-cut misread stays a documented
+  known limitation.
+
+**No reading is structurally blocked from any relation** (user directive 2026-07-03); the
+only exclusions are the manual Readings toggles (`config.carriers.disabled`). Net
+commensurability: sales (ratio) → the 20 ratio ∪ cyclic cells (**16 distinct carriers** —
+everything, under the v1 geometry); order (ordinal) → all 26 (**16 distinct**).
 
 **Comprehensive scoring (default)** — per data relation R, over the distinct carriers m
 commensurable with it (cells q from §6):

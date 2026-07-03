@@ -59,9 +59,10 @@ src/
       engine.ts              Reverse-mode AD: Value node, ops, backward(). 48 leaves → exact ∇S.
       ops.ts                 variance, correlation, circularMean, sigmoid, logLength — differentiable.
       gradcheck.ts           Finite-difference check of every primitive + full score (test util).
-    scale.ts                 ScaleType {ordinal,interval,ratio,cyclic}; the v2 reads-down order
-                             (ordinal ≤ interval ≤ ratio; ordinal ≤ cyclic ONLY — cyclic demoted);
-                             commensurability(dataType, stamp) legality check.
+    scale.ts                 ScaleType {ordinal,interval,ratio,cyclic}; the v2.2 reads-down order
+                             (the full chain ordinal ≤ interval ≤ ratio ≤ cyclic — circular edges
+                             restored; sound circular rung forms live in fidelity/, routed by
+                             unit class); commensurability(dataType, stamp) legality check.
     data.ts                  DataSet = labels A..L (ordinal) + values ℝ⁺ (ratio).
                              seedToDataSet(seed): deterministic positive values.
     figure.ts                Figure = Float64Array(48) (12 segments × [sx,sy,ex,ey]).
@@ -221,12 +222,33 @@ never verify by eyeballing. Add to this list as the system grows.
 - **Nesting (symmetric sense):** `c = ±k·v ⇒ F_ratio=1 ⇒ F_int=1 ⇒ τ_sym=1` (never violated).
 - Differentiable `F_ord` surrogate → exact `F_ord` as `T → 0` (above the floor).
 - **Salience:** `s = Var/(Var+θ²)` gates every cell; a sub-threshold perfect carrier earns ≈ 0.
+- **Circular rungs (v2.2, angle carriers — `fidelity/ladder.test.ts`):** `fIntCirc` is
+  wrap-invariant (adding 2π to any subset of bearings changes nothing; a 4-rad dial wraps and
+  R² stays ≈ 0.95 where linear r² collapses to 0.05), rotation-invariant (θ → θ+φ exact),
+  direction-symmetric (mirrored bearings identical), ∈ [0,1] on adversarial draws, degenerate/
+  rank-1 bearings → 0 smoothly with finite gradients, chance floor ≈ 2/(n−1); the unit-class
+  routing is load-bearing (INT_RUNG picks the circular form iff `unitClass = 'angle'`, both paths).
+  BOTH paths share the ε-guard: exactly-antipodal bearings (θ ∈ {0, π} — mixed-direction
+  horizontal segments; the Mardia det is float-cancellation noise there) score ~0 on the EXACT
+  twin too (pre-fix it returned 1.476 > 1 through scoreExact; 24-pattern regression pins ≤ 1e-6).
+- **Dial fixtures & ANTI-CLIFF (`core/dial.test.ts`):** a perfect dial earns the full sales
+  ladder through its tilt carrier; a mirrored dial scores identically; rotating the dial keeps
+  `fIntCirc` bit-stable while ratio honestly degrades (a gauge's zero matters). One needle
+  crossing ±π moves the cell by ≤ the DERIVED bound `w_ratio·(2/12)/cohCeil + w_ord·(2·11)/66`
+  (measured Δcell 1.000 of max 7.5; whole-figure Δtotal 0.073 — v1's cliff was Δ4.72 from
+  0.002 rad); the value spiral's whispered angles stay salience-gated; random bearings sit at
+  the fIntCirc chance floor; the origin dial EARNS the sales angle-pair coincidence (σ_eqAngle
+  routing); full-score gradcheck passes with angle cells live in sales.
 
 **Scale / commensurability**
 - `commensurability(dataType, stamp)` accepts iff `dataType ≤ stamp`; rejects month→interval-only
   reads and any cross-type comparison.
-- v2 reads-down: `ordinal ≤ interval ≤ ratio`, `ordinal ≤ cyclic`, and NOTHING else ≤ cyclic
-  (no interval/ratio from raw bearings — branch cuts).
+- v2.2 reads-down: the full chain `ordinal ≤ interval ≤ ratio ≤ cyclic` (circular edges
+  restored — dials/gauges are legitimate; angle carriers score interval via the wrap- and
+  rotation-invariant Mardia circular–linear R² `fIntCirc`, ratio via the wrap-continuous
+  `fRatio` unchanged; the ±π wrap moves a cell by a bounded ≈ one-item coherence share,
+  measured in `core/dial.test.ts`, vs v1's 5.56 → 0.84 relation cliff). No reading is
+  structurally blocked from any relation; exclusions only via the Readings toggles.
 - Every scored comparison is between two length-12 vectors of compatible type (a
   cross-reading vector cannot be constructed through the public API).
 
@@ -236,7 +258,7 @@ never verify by eyeballing. Add to this list as the system grows.
 - `length` identical under both anchors; run/rise/tilt identical iff frame ∥ page.
 - Raw scale census is 15 ratio / 6 interval / 5 cyclic.
 - **Dedup:** under the v1 geometry `carriers(cfg)` has exactly 16 distinct carriers
-  (12 ratio / 4 cyclic; sales → 12, order → 16); merged carriers keep the max stamp and
+  (12 ratio / 4 cyclic; v2.2: sales → 16 AND order → 16); merged carriers keep the max stamp and
   list their aliases; the rules are structural (moving/rotating the frame un-merges the
   right classes); `carrierFor` resolves aliases.
 

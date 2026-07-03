@@ -130,6 +130,117 @@ Reset/new seed. Selectable like any thumbnail (main canvas + full breakdown); ex
 ★/best/result; Save disabled while selected ("reference chart — not an evolved result");
 `config.ui.showReferenceBars` to hide. `accept.ts` now imports the shared fixture. 272 tests green.
 
+### v2.2 lattice restore — ratio ≤ cyclic with SOUND circular forms (2026-07-03, user directive)
+Dials/gauges are legitimate encodings; from now on NO reading is structurally blocked from any
+relation (only the manual Readings toggles exclude). The v1 cyclic-on-top was demoted for RUNG-FORM
+defects (raw atan2 in linear stats: ±π cliff 5.56→0.84 from 0.002 rad, mirrored dials ≈ 0) — v2.2
+fixes those at the correct layer and restores the full chain **ordinal ≤ interval ≤ ratio ≤ cyclic**
+(`scale.ts`). Rung FORMS route by the carrier's unit class (`rungs.ts`, the spread-floor pattern):
+- **interval on angles** = `ladder.fIntCirc` — Mardia circular–linear R² =
+  (r_vc²+r_vs²−2·r_vc·r_vs·r_cs)/(1−r_cs²), computed sqrt-free as
+  (a²Vs+b²Vc−2abc)/((Vv+ε)(VcVs−c²+ε)) from cov/var of (v, cosθ, sinθ). Wrap-invariant (cos/sin
+  reads — no cliff), rotation-invariant (dial zero arbitrary = interval's affine anchor),
+  direction-symmetric, ∈[0,1] (PSD quadratic form ≤ multiple-R²), degenerate/rank-1 bearings → 0
+  smoothly (ε = eps.corrVar). Perfect dial ≈ 1: 0.9948 at 2.5 rad span, 0.953 at 4 rad WHERE THE
+  ARC WRAPS and linear r² collapses to 0.05. Exact twin `fIntCircExact` (fIntExact pattern).
+  sin/cos were ALREADY gradchecked engine primitives (no engine change); fIntCirc gradchecked.
+- **ratio on angles** = v2.1 `fRatio` UNCHANGED (√(θ²+ε) magnitude continuous across the cut;
+  side-coherence discontinuity is localized & bounded: one item crossing |θ|=π moves the cell by
+  ≤ w_ratio·(2/12)/cohCeil + w_ord·2·11/66 ≈ 1.019 — measured Δcell = 1.000 of max 7.5, whole-
+  figure Δtotal = 0.073, vs v1's Δ4.72 relation collapse; pinned in `core/dial.test.ts`).
+- **ordinal on angles** unchanged (raw form, documented localized-cut limitation).
+Census: sales candidates 12 → **16 distinct** (= order's; 15 → 20 raw). New `fixtures.dialChart`
+(12 equal needles from a common center, bearings k·v+φ). Adversarial gates (`core/dial.test.ts` +
+ladder/scale/measurements/assignment/score/coincidence updates): perfect dial earns the full sales
+ladder through the tilt carrier (ratio = 1, fIntCirc = 0.9948, q = 0.86); mirrored dial identical;
+rotated dial keeps fIntCirc (1e-9) while ratio degrades 1.0 → 0.50 → less; wrap-crossing bounded
+(anti-cliff regression prints the numbers); value-spiral sales-from-angle still salience-gated
+(sal 0.037, q < 0.05); random bearings sit at the 2-regressor chance floor (mean 0.18 ≈ 2/(n−1));
+origin-centered dial EARNS sales angle-pair coincidence (tilt ≡ fr·end angle, eq = 1 via σ_eqAngle
+— routing verified by test, not assumed); off-center dial gets no free pairs; Value≈exact lockstep;
+full-score gradcheck with live angle cells. Salience/coincidence/data-ink needed NO code change
+(θ_ang and σ_eqAngle routing pre-existed) — verified by test. Honest consequences pinned: a
+sub-pixel golden keeps its scale-free ANGLE residue in sales now (atan2 is size-invariant — the
+salience invariant is stated per length-class carrier, exactly as it always was for order; accept
+gate 3 restated in that form, not weakened); golden sales LSE dilutes ~0.04 by the 4 low-q angle
+cells (N 12→16). Gate-1 margins hold (golden 1.77/1.75 vs best degenerate 0.85; a dial scores
+0.44 — it sacrifices order; measured in scratch/probe_circ.ts). 337 tests green (+24 new),
+typecheck/lint/gradcheck green. CONCEPT §§3,7 + ARCHITECTURE updated (the demotion's registered
+open question is CLOSED).
+
+### v2.2 lattice restore — adversarial verification pass (2026-07-03, independent verifier)
+All six attack lines executed with numbers (probes preserved: `scratch/verify_v22_attack.ts`,
+`verify_v22_zerocross.ts`, `verify_v22_subpixel.ts`):
+- **THE CLIFF, re-executed**: the exact v1 catastrophe scenario (fan at max bearing π−0.001,
+  rotated 0.002 rad across the cut, data seed 1) now moves the TOTAL by **0.0227** (v1: Δ4.72 on
+  the relation, 5.56 → 0.84 — a ~200× reduction) and the sales aggregate by 0.038; fIntCirc moves
+  1e-15 (reads through the cut); the residue attributes EXACTLY to the two documented one-item
+  events (Δord = 0.3333 = 2·11/66 rank flip; Δratio = 0.117 ≤ 0.169 side share). A full-2π dial
+  rotation sweep (1257 steps of 0.005 rad) found NO event outside the two documented localized
+  families: max per-step Δtotal 0.031 at ±π crossings, 0.012 elsewhere. The suite's anti-cliff
+  regression prints Δcell = 1.0000 (derived bound 1.0190, cell max 7.5), Δtotal = 0.0733.
+- **A third localized event family identified & classified**: fRatio's log-magnitude notch when a
+  needle crosses θ = 0 (per-step Δtotal up to 0.068 at h = 0.005). Zoom test: Δ halves with h
+  (ratio 0.483 ≈ 0.5) ⇒ CONTINUOUS, steep — a notch, not a cliff; inherent v2.1 fRatio behavior
+  for ANY sign-crossing carrier (positions too), unchanged by v2.2. Documented in the probes.
+- **Mirror/rotation**: mirrored dial ≡ dial on the tilt cell to 0.0 (whole-figure Δ 0.0018 —
+  reflection symmetry of OTHER carriers is not claimed); fIntCirc bit-stable (max dev 1.7e-15)
+  over the whole φ sweep while ratio falls smoothly (max quiet step 0.013).
+- **Ranking incl. NEW traps**: golden 1.766/1.745 beats everything on both gate datasets; a LOUD
+  order-spiral (angle spread 0.69 rad ≫ θ_ang; radii ∝ value) is the best trap at 1.242/1.218 —
+  margin ≥ 0.48, no gate threatened (and no legitimate discovered kind outranks golden statically).
+  LOUD value-spiral (pinwheel) 0.73/0.76; dials 0.29–0.63; randoms best 0.21. Golden's sales
+  dilution from the 4 angle cells: LSE 0.768 → 0.732 (Δ = 0.0356), margins unaffected. Sub-pixel
+  golden (the new scale-free angle residue, sales q ≈ 0.31) totals 0.125 — NOT a competitive basin.
+- **Census coherence**: 16/16 candidate sets, per-relation LSE, 16-cell ink mean, and BOTH
+  relations' 72-pair coincidence LSEs (66 length + 6 angle) all reconstruct from first principles
+  to 1e-9; origin-dial angle pair eq = 1.000000. One stale count found & fixed (CONCEPT §4 funnel
+  still said "sales → 12"); no other stale 12 in src/scripts/docs.
+- **Gates**: `npm run check` 337/337 · build · gradcheck · `accept --quick --seeds=1,2` all green.
+- **Docs**: ARCHITECTURE §Verification gained the circular-rung + dial-fixture/anti-cliff
+  invariant entries (they were only in the reads-down bullet); CONCEPT §7 restore text and the
+  closed open question verified correct.
+Registered observation (M10): angle salience gates ANGULAR spread only — a sub-pixel figure keeps
+readable-in-theory bearings (q ≈ 0.31 residue). Harmless today (totals 0.13, far under every
+basin); the principled fix is a segment-length-aware angle θ at M10 calibration.
+
+### v2.2 lattice restore — SECOND adversarial pass: antipodal cancellation defect FOUND & FIXED
+(2026-07-03, independent verifier #2; probes `scratch/verify_v22_circular_attack.ts` +
+`verify_v22_antipodal.ts`, full output `verify_v22_circular_attack.out.txt`)
+- **CONFIRMED DEFECT (fixed at the ladder layer)**: `fIntCircExact` had NO ε-guard — unlike its
+  Value twin — and the sqrt-free Mardia det `Vc·Vs − c²` is a cancellation magnet at rank-1.
+  Exactly-antipodal bearings (θ ∈ {0, π} EXACTLY — any mixed-direction horizontal figure, since
+  `atan2(±0, ∓dx)` is exact and `sin π = 1.2e-16`) leave det as float noise that can land ±:
+  one side pattern returned **R² = 1.476 > 1** (breaking ∈[0,1] AND lockstep — the Value path's
+  ε held it at ~0), reproduced END-TO-END through `scoreExact`: tilt int rung 1.476, tilt cell
+  q 0.067 → 0.536, total 1.346 → 1.428 on a hand fan of horizontal bars. scoreExact drives every
+  gate ranking, endpoint selection, and the characterizer — a real poisoning channel. FIX:
+  `fIntCircExact(θ, v, eps)` now uses the SAME ε-guarded denominators as `fIntCirc` (ε threaded
+  from `config.eps.corrVar` by INT_RUNG, the `fRatioExact` precedent); clean degenerates still
+  return exactly 0; healthy dials shift O(ε/det) ≈ 1e-8. Regression test: 24 antipodal
+  side-patterns × both paths pinned ≤ 1e-6 in `ladder.test.ts`. 338 tests green (+1).
+- **Cliff re-executed (wellSeparated data)**: one needle crossing ±π: Δtotal 0.0733, Δcell 1.0000
+  ≤ derived bound 1.0190, Δint 3.8e-6 (reads through the cut), Δord = 0.3333 (= 2·11/66) and
+  Δratio = 0.1667 ≤ 0.1689 — the step attributes EXACTLY to the two documented one-item events.
+  Full-2π sweep, 2400 steps: 12 ±π events (max Δtotal/step 0.031), θ≈0 notch events (max 0.055),
+  max elsewhere 0.00997 — no undocumented cliff. Zoom: θ=0 notch max Δq/step 0.26@h=2e-3 →
+  0.014@h=2e-5 (CONTINUOUS, confirming verifier #1's classification); ±π step persists
+  0.0169 → 0.0167 (true bounded discontinuity).
+- **Mirror, stated exactly**: k→−k mirrors about the dial center — only the TILT is negated (its
+  rungs bit-identical, Δ = 0.0; frame point-angles legitimately differ; Δtotal 1.8e-3). The true
+  symmetry, whole-figure y → −y about the frame axis: ALL 32 cells identical (worst 8.3e-17),
+  reward Δ 0.0, total Δ 8.5e-9 (cross-cell coincidence eq only). Rotation: fIntCirc dev 1.3e-15
+  over φ ∈ [0, 3.2]; ratio falls smoothly (max quiet step 0.005), crossing steps 0.087 ≤ 0.169.
+- **Rankings incl. NEW candidate kinds**: golden 1.745/1.766 (wellSep/seed-1) beats everything;
+  closest non-bar is now the **tilt chart** (x ∝ rank, equal lengths, bearing ∝ value) at 1.299 —
+  a legitimate v2.2-enabled encoding, margin 0.446, no gate threatened; LOUD order-spirals 0.81 to
+  0.97, value-radius dial 0.48, dials 0.29–0.63, best random 0.163. Golden sales LSE dilution from
+  the 4 angle cells re-measured: 0.759 → 0.724 (Δ 0.0355).
+- **Gates after the fix**: `npm run check` 338/338 · `npm run build` · `npm run gradcheck` (36) ·
+  `accept --quick --seeds=1,2` gates 1–4 all ok; gate-5 rows 2/2 Y (the "≥5/6" tallies read FAIL
+  arithmetically when only 2 seeds run — the script's documented --seeds behavior). The FULL
+  `npm run accept` remains the authoritative gate-5 run (pre-existing --quick cap caveat).
+
 ### The audit (2026-07-01)
 An 87-agent adversarial audit (every finding confirmed by ≥2/3 independent verifiers with numeric
 reproductions; ~110 scripts preserved in `scratch/` — reuse as probes, never modify) proved the v1
@@ -381,9 +492,11 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
   independent played-out trajectories (frozen endpoints; best endpoint wins).
 
 ## Open questions
-- **Circular rung forms.** Branch-free circular statistics (circular correlation/variance) so
-  bearings can soundly carry interval/ratio again; until then interval/ratio-from-bearings is OFF
-  and even ordinal-from-bearings keeps the branch-cut limitation (registered by the v2 redesign).
+- ~~**Circular rung forms.**~~ **CLOSED (v2.2, 2026-07-03):** bearings soundly carry
+  interval (fIntCirc, Mardia circular–linear R²) and ratio (fRatio unchanged — wrap-continuous
+  magnitude + bounded localized side-flip) again; the full chain ordinal ≤ interval ≤ ratio ≤
+  cyclic is restored. Remaining residue: ordinal-from-bearings keeps the raw form's localized
+  branch-cut misread (documented limitation, unchanged behavior).
 - **Calibration (M10).** Measure salience θ per reading class (Cleveland–McGill); the
   `w_int` (r²) vs `w_ratio` (exp-of-variance) unit mismatch also remains.
 - **Frame movement (M8).** Optimize the posited frame's origin/direction; the dedup layer is
@@ -398,8 +511,8 @@ UI v2 (trajectory strip, fixed viewport). See Status (top) for verified numbers.
 `-- --sessions` for gate 5) · `npm run gradcheck` · `npm run bench` · `npm run dev` (GUI at :5173).
 
 Open menu (user's call which):
-- **Circular rung forms** — restore interval/ratio-from-bearings soundly; removes the registered
-  cyclic limitation and re-opens dial/radial encodings to the sales relation.
+- ~~**Circular rung forms**~~ — DONE (v2.2, 2026-07-03): dial/radial encodings are re-opened to
+  the sales relation with sound forms; see the v2.2 lattice-restore entry above.
 - **M8 frame movement** — optimize the posited frame; the structural dedup already supports it.
 - **M10 calibration** — measure salience θ per reading class (the Cleveland–McGill anchor's
   principled home, CONCEPT §6).

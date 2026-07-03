@@ -19,13 +19,14 @@ import { config } from '../config';
 const data = wellSeparatedData();
 const golden = goldenBarChart(data);
 
-describe('assignment: legal candidates (commensurability dataType ≤ stamp, v2 census)', () => {
+describe('assignment: legal candidates (commensurability dataType ≤ stamp, v2.2 census)', () => {
   const [sales, order] = dataRelations(data);
-  it('sales (ratio) → exactly the 15 ratio measurements pre-dedup (v2: cyclic demoted, 20 → 15)', () => {
+  it('sales (ratio) → all 20 ratio ∪ cyclic measurements pre-dedup (v2.2: dials restored, 15 → 20)', () => {
     const c = legalCandidates(sales!, REGISTRY);
-    expect(c.length).toBe(15);
-    expect(c.every((m) => m.stamp === ScaleType.Ratio)).toBe(true);
-    expect(c.some((m) => m.stamp === ScaleType.Cyclic)).toBe(false); // no ratio-from-bearing
+    expect(c.length).toBe(20);
+    expect(c.filter((m) => m.stamp === ScaleType.Ratio).length).toBe(15);
+    expect(c.filter((m) => m.stamp === ScaleType.Cyclic).length).toBe(5); // ratio-from-bearing is back
+    expect(c.some((m) => m.stamp === ScaleType.Interval)).toBe(false); // baseline demotion stays illegal
   });
   it('order (ordinal) → all 26 measurements (interval ∪ ratio ∪ cyclic; order readable from angles)', () => {
     const c = legalCandidates(order!, REGISTRY);
@@ -61,7 +62,15 @@ describe('assignment: BestAssignment (argmax over legal maps)', () => {
     const bestReward = rewardOf(golden, data, bestMap);
     expect(bestReward).toBeGreaterThanOrEqual(fixedReward - 1e-9);
   });
-  it('never assigns a cyclic carrier to SALES (ratio ≰ cyclic); the whole map stays legal', () => {
+  it('a cyclic carrier is LEGAL for sales now (v2.2: dials are legitimate); the best map stays legal', () => {
+    // legality: sales → an angle measurement passes assertLegal (would have thrown pre-v2.2)
+    const dialMap: AssignmentMap = new Map([
+      ['sales', 'page.displacement.angle'],
+      ['order', 'page.start.projPar'],
+    ]);
+    expect(() => assertLegal(dialMap, dataRelations(data))).not.toThrow();
+    // behavior: on the GOLDEN BARS the argmax still prefers a non-cyclic sales carrier (the bars'
+    // angles are constant — salience 0), while the whole map remains legal
     const bestMap = resolveAssignment(BestAssignment, data, golden);
     expect(REGISTRY.get(bestMap.get('sales')!)!.stamp).not.toBe(ScaleType.Cyclic);
     expect(() => assertLegal(bestMap, dataRelations(data))).not.toThrow();

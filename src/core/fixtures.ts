@@ -119,6 +119,40 @@ export function valueSpiral(data: DataSet, k = valueScale(data)): Figure {
   });
 }
 
+// ── dial fixture (v2.2 ratio≤cyclic restore: a gauge is a legitimate encoding) ──
+
+export interface DialOptions {
+  /** Radians per data unit: bearing_i = k·value_i + phase. Default spans `span` at the data max. */
+  k?: number;
+  /** Total bearing span (radians) at the dataset's max value, used only when k is not given. */
+  span?: number;
+  /** Common rotation added to every bearing — a gauge's zero offset (0 = reference-aligned). */
+  phase?: number;
+  /** Common needle origin (page units). Put it at the frame origin to make the point-angle
+   *  carriers coincide with the tilt — an ACHIEVED identity, good for coincidence tests. */
+  center?: [number, number];
+  /** Common needle length (equal on purpose: length must carry nothing on a pure dial). */
+  radius?: number;
+}
+
+/**
+ * A perfect dial/gauge for `data`: twelve equal-length needles from a common center, needle i at
+ * bearing k·value_i + phase from the page reference direction. The tilt carrier reads EXACTLY
+ * k·v + phase (mod 2π): at phase 0 the ratio rung is maxed (|θ| ∝ v, coherent side) and fIntCirc
+ * ≈ 1; any phase keeps fIntCirc unchanged (rotation invariance) while the ratio rung honestly
+ * degrades (a gauge's zero matters for RATIO). Mirrored dial = negative k.
+ */
+export function dialChart(data: DataSet, opts: DialOptions = {}): Figure {
+  let vmax = 0;
+  for (let i = 0; i < N_ITEMS; i++) vmax = Math.max(vmax, data.values[i]!);
+  const { span = 2.5, phase = 0, center = [50, 50], radius = 40 } = opts;
+  const k = opts.k ?? (vmax > 0 ? span / vmax : 1);
+  return buildFigure((i) => {
+    const th = k * data.values[i]! + phase;
+    return [center[0], center[1], center[0] + radius * Math.cos(th), center[1] + radius * Math.sin(th)];
+  });
+}
+
 /** The named degenerate line-up for ranking gates (golden must beat every one of them). */
 export function auditDegenerates(data: DataSet): { name: string; figure: Figure }[] {
   return [

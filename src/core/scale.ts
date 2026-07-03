@@ -3,14 +3,20 @@
 // Scale types and the "reads-down" partial order (CONCEPT.md §§3,5,7). Scale type is the payload:
 // every measurement cell is stamped with the structure it can carry, read off its frame.
 //
-// The reads-down order (Stevens' hierarchy; v2 after the scoring-v2 redesign):
-//   ordinal ≤ interval ≤ ratio      (the linear chain)
-//   ordinal ≤ cyclic                (and NOTHING else is ≤ cyclic)
-// A bearing's rank can carry ORDER (a dial's needle positions are readable as a sequence), but the
-// v1 idea that raw atan2 bearings carry interval/ratio was CONFIRMED unsound by the audit: linear
-// stats on raw bearings hit branch-cut cliffs and score mirrored dials ~0. Interval/ratio-from-
-// bearings stays OFF until genuine circular rung forms exist (registered open question). The
-// branch-cut on ordinal-from-bearings remains a documented known limitation.
+// The reads-down order (Stevens' hierarchy; v2.2 — the circular edges RESTORED with sound forms):
+//   ordinal ≤ interval ≤ ratio ≤ cyclic     (the full chain)
+// Dials and gauges are legitimate encodings: an angle CAN carry ratio (bearing ∝ value from a
+// reference) and interval (bearing affine in value — a dial with an arbitrary zero). The v2
+// demotion of cyclic (ordinal-only) was a response to REAL defects — raw atan2 bearings fed into
+// LINEAR statistics hit a catastrophic ±π branch-cut cliff (0.002 rad rotation collapsed a reward
+// 5.56 → 0.84) and scored mirrored dials ≈ 0 — but the defect was in the RUNG FORMS, not in the
+// lattice. v2.2 fixes it at the correct layer: rung forms route by the carrier's unit class
+// (fidelity/rungs.ts) — angle carriers score interval via the wrap-invariant circular–linear
+// correlation (ladder.fIntCirc) and ratio via the wrap-continuous magnitude form (ladder.fRatio,
+// circular-appropriate as-is; see rungs.ts). NO reading is structurally blocked from any relation
+// any more (user directive 2026-07-03); the only exclusions are the manual Readings toggles
+// (config.carriers.disabled). The ordinal rung on raw bearings keeps its documented localized
+// branch-cut limitation.
 //
 // Assignment legality (CONCEPT §7): a measurement with `stamp` can carry `dataType` iff
 // dataType ≤ stamp ("read a stamp down, never up").
@@ -41,13 +47,13 @@ const LEQ: Record<ScaleType, Record<ScaleType, boolean>> = {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: true,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: false, // v2: no linear-metric structure read from raw bearings (branch cuts)
+    [ScaleType.Cyclic]: true, // v2.2: a dial with an arbitrary zero — read via fIntCirc (wrap-safe)
   },
   [ScaleType.Ratio]: {
     [ScaleType.Ordinal]: false,
     [ScaleType.Interval]: false,
     [ScaleType.Ratio]: true,
-    [ScaleType.Cyclic]: false, // v2: ratio-from-bearing removed until circular rung forms exist
+    [ScaleType.Cyclic]: true, // v2.2: a gauge — bearing ∝ value; read via the wrap-continuous fRatio
   },
   [ScaleType.Cyclic]: {
     [ScaleType.Ordinal]: false,

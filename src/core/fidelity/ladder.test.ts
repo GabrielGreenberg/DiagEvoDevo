@@ -11,19 +11,22 @@
 
 import { describe, it, expect } from 'vitest';
 import { val, backward, type Value } from '../autograd/engine';
+import { gradcheckBuild } from '../autograd/gradcheck';
 import {
   fOrd,
   tauSym,
   fInt,
+  fIntCirc,
   fRatio,
   tauSymExact,
   fIntExact,
+  fIntCircExact,
   fRatioExact,
   lseMean,
   lseMeanN,
   smoothAbs,
 } from './ladder';
-import { rungsForData, maxRewardFor, rewardValue, rewardExact, spreadFloorFor } from './rungs';
+import { rungsForData, maxRewardFor, rewardValue, rewardExact, spreadFloorFor, INT_RUNG } from './rungs';
 import { ScaleType } from '../scale';
 import { config } from '../../config';
 import { mulberry32, uniform } from '../rng';
@@ -306,6 +309,141 @@ describe('ladder: ∇τ_sym corrective gradient (v2 re-add of the ∇F_ord lands
     const fullDesc = [120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
     expect(tauSymV(fullDesc, v, config.T)).toBeGreaterThan(tauSymV(descInverted, v, config.T));
     expect(tauSymExact(arr(fullDesc), arr(v))).toBeCloseTo(1, 12);
+  });
+});
+
+describe('ladder: circular interval rung fIntCirc (v2.2 — Mardia circular–linear R²)', () => {
+  // The sound form behind the ratio≤cyclic/interval≤cyclic restore. Every property below is a
+  // CONFIRMED v1 branch-cut defect this form must kill (the v1 linear-r²-on-raw-bearings cliff:
+  // a 0.002 rad rotation collapsed a relation reward 5.56 → 0.84; mirrored dials scored ≈ 0).
+  const v = [300, 50, 900, 140, 600, 25, 1000, 200, 450, 90, 780, 10]; // well-separated values
+  const vmax = 1000;
+  const wrap = (t: number): number => {
+    // reduce to atan2's range (−π, π] — what an angle carrier actually returns
+    let x = t;
+    while (x > Math.PI) x -= 2 * Math.PI;
+    while (x <= -Math.PI) x += 2 * Math.PI;
+    return x;
+  };
+  const dialTheta = (span: number, phase = 0): number[] => v.map((x) => wrap((span / vmax) * x + phase));
+  const circE = (th: number[]): number => fIntCircExact(arr(th), arr(v), EPS);
+  const circV = (th: number[]): number => fIntCirc(V(th), V(v), EPS).data;
+
+  it('a perfect dial θ = k·v scores ≈ 1 (0.9948 at 2.5 rad span; → 1 as the arc shrinks)', () => {
+    expect(circE(dialTheta(2.5))).toBeGreaterThan(0.99);
+    expect(circE(dialTheta(1.0))).toBeGreaterThan(0.999);
+    expect(circE(dialTheta(0.3))).toBeGreaterThan(0.9999);
+    expect(circV(dialTheta(2.5))).toBeCloseTo(circE(dialTheta(2.5)), 6);
+  });
+
+  it('ROTATION-INVARIANT: θ → θ+φ leaves R² unchanged even when the arc wraps past ±π', () => {
+    const base = circE(dialTheta(2.5));
+    for (const phase of [0.7, 1.5, 3.0, 5.0]) {
+      expect(circE(dialTheta(2.5, phase)), `phase ${phase}`).toBeCloseTo(base, 9);
+      expect(circV(dialTheta(2.5, phase)), `phase ${phase} (Value)`).toBeCloseTo(base, 6);
+    }
+  });
+
+  it('WRAP-INVARIANT where linear r² CLIFFS: a 4-rad dial wraps, r² collapses to 0.05, R² stays 0.95', () => {
+    const th = dialTheta(4.0); // bearings past π wrap to the negative branch
+    expect(circE(th)).toBeGreaterThan(0.95); // the circular form reads through the cut
+    expect(fIntExact(arr(th), arr(v))).toBeLessThan(0.1); // the v1 defect, demonstrated
+    // and adding 2π to any subset of bearings changes NOTHING (cos/sin are the readings)
+    const rewrapped = th.map((t, i) => (i % 2 === 0 ? t + 2 * Math.PI : t));
+    expect(circE(rewrapped)).toBeCloseTo(circE(th), 12);
+  });
+
+  it('DIRECTION-SYMMETRIC: the mirrored dial θ → −θ scores identically (v1 scored it ≈ 0)', () => {
+    for (const span of [1.0, 2.5, 4.0]) {
+      const th = dialTheta(span, 0.4);
+      const mirrored = th.map((t) => -t);
+      expect(circE(mirrored), `span ${span}`).toBeCloseTo(circE(th), 12);
+    }
+  });
+
+  it('small-arc limit: fIntCirc ≈ linear r² where linear ≈ circular (span 0.3, affine + noisy)', () => {
+    // noise-free affine: the forms agree to ~1e-4 at this span
+    const clean = v.map((x) => 0.5 + (0.3 / vmax) * x);
+    expect(Math.abs(circE(clean) - fIntExact(arr(clean), arr(v)))).toBeLessThan(1e-3);
+    // with per-item noise the circular form sits ≤ 5e-3 above r² (two regressors fit noise
+    // slightly better than one — measured max 4.7e-3 over these draws), never below − 1e-3
+    const rng = mulberry32(31);
+    for (let t = 0; t < 10; t++) {
+      const th = v.map((x) => 0.5 + (0.3 / vmax) * x + uniform(rng, -0.02, 0.02));
+      const gap = circE(th) - fIntExact(arr(th), arr(v));
+      expect(gap).toBeLessThan(6e-3);
+      expect(gap).toBeGreaterThan(-1e-3);
+    }
+  });
+
+  it('degenerates → 0, never NaN: constant θ, near-constant θ (finite grads), two-point θ', () => {
+    const flat = new Array<number>(12).fill(0.7);
+    expect(circE(flat)).toBe(0); // exact twin: clean degenerate ⇒ exactly 0 (early return; ε-guarded otherwise)
+    expect(circV(flat)).toBe(0);
+    const rng = mulberry32(11);
+    const near = flat.map(() => 0.7 + uniform(rng, -1e-5, 1e-5));
+    expect(circV(near)).toBeLessThan(1e-6); // ε holds the denominator: smooth → 0
+    const leaves = V(near);
+    const f = fIntCirc(leaves, V(v), EPS);
+    backward(f);
+    for (const l of leaves) expect(Number.isFinite(l.grad)).toBe(true);
+    // rank-1 (two-point) bearings cannot pin an affine dial: numerator is exactly 0
+    const twoPoint = v.map((x) => (x > 300 ? 1.0 : -0.5));
+    expect(circE(twoPoint)).toBe(0);
+    expect(circV(twoPoint)).toBeLessThan(1e-6);
+  });
+
+  it('ANTIPODAL cancellation regression (2026-07-03): θ ∈ {0, π} exactly must NOT inflate R²', () => {
+    // A mixed-direction exactly-horizontal figure extracts tilt ∈ {0, π} EXACTLY; sin π = 1.2e-16
+    // makes det float noise (±1e-32), and the pre-fix unguarded exact twin returned 1.476 > 1
+    // through scoreExact (tilt cell q 0.07 → 0.54). Both side patterns, every value alignment:
+    // the exact path must stay in [0, ~0] and in LOCKSTEP with the ε-guarded Value path.
+    for (const flip of [false, true]) {
+      for (let rot = 0; rot < 12; rot++) {
+        const th = v.map((_, i) => ((v[(i + rot) % 12]! > 300) !== flip ? Math.PI : 0));
+        // |·|: the rank-1 numerator cancels to ±float-dust (±1e-40); anything beyond dust is the bug
+        expect(Math.abs(circE(th)), `flip ${flip} rot ${rot} (exact)`).toBeLessThan(1e-6);
+        expect(Math.abs(circV(th)), `flip ${flip} rot ${rot} (value)`).toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it('∈ [0,1] on 500 adversarial draws; chance level ≈ 2/(n−1), far from 1', () => {
+    const rng = mulberry32(12);
+    let acc = 0;
+    const N = 500;
+    for (let t = 0; t < N; t++) {
+      const th = Array.from({ length: 12 }, () => uniform(rng, -Math.PI, Math.PI));
+      const f = circE(th);
+      expect(f).toBeGreaterThanOrEqual(0);
+      expect(f).toBeLessThanOrEqual(1 + 1e-9);
+      acc += f;
+    }
+    expect(acc / N).toBeLessThan(0.3); // measured 0.18 ≈ 2/(n−1): two regressors' chance floor
+    expect(acc / N).toBeGreaterThan(0.05); // and the measure is alive, not stuck at 0
+  });
+
+  it('gradcheck: composed from gradchecked primitives, the full form still matches FD', () => {
+    const rng = mulberry32(13);
+    for (let t = 0; t < 5; t++) {
+      const th = Array.from({ length: 8 }, () => uniform(rng, -2.5, 2.5));
+      const rep = gradcheckBuild(
+        (leaves) => fIntCirc(leaves, V(v.slice(0, 8)), EPS),
+        th,
+        { h: config.gradcheck.epsFD, tol: config.gradcheck.tol },
+      );
+      expect(rep.relL2, `trial ${t}`).toBeLessThan(config.gradcheck.tol);
+    }
+  });
+
+  it('rung routing: INT_RUNG selects the circular form for angle carriers ONLY (both paths)', () => {
+    const th = dialTheta(2.5, 0.9); // rotated: circular and linear forms genuinely differ here
+    expect(INT_RUNG.fExact(arr(th), arr(v), config, 'angle')).toBeCloseTo(circE(th), 12);
+    expect(INT_RUNG.fExact(arr(th), arr(v), config, 'length')).toBeCloseTo(fIntExact(arr(th), arr(v)), 12);
+    expect(INT_RUNG.fDiff(V(th), V(v), config, 'angle').data).toBeCloseTo(circV(th), 12);
+    expect(INT_RUNG.fDiff(V(th), V(v), config, 'length').data).toBeCloseTo(fInt(V(th), V(v), EPS).data, 12);
+    // the two forms disagree on this input — the routing is load-bearing, not cosmetic
+    expect(Math.abs(circE(th) - fIntExact(arr(th), arr(v)))).toBeGreaterThan(0.05);
   });
 });
 

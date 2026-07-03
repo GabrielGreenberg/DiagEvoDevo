@@ -370,8 +370,20 @@ for (const d of [seedToDataSet(config.seeds.data), wellSeparatedData()]) {
   const d = wellSeparatedData();
   const g = golden(d);
   const scaled = (k: number): Figure => Float64Array.from(g, (x) => x * k);
-  const sub = rel(scoreExact(scaled(0.001), d), 'sales').aggregated;
-  check('3', 'sub-pixel perfect sales carriers earn ≈0', sub < 0.02, `aggregated ${sub.toFixed(4)}`);
+  // v2.2 (ratio≤cyclic restored): sales candidates now include the scale-free ANGLE carriers, whose
+  // structure legitimately survives a uniform shrink (atan2 is size-invariant — the same residue
+  // the order relation always kept). The salience invariant is therefore stated PER LENGTH-CLASS
+  // carrier — the form it always had for order — and is NOT weakened: no length reading survives.
+  const subRel = rel(scoreExact(scaled(0.001), d), 'sales');
+  const subLen = Math.max(
+    ...subRel.carriers.filter((c) => !c.id.includes('angle')).map((c) => c.q),
+  );
+  check(
+    '3',
+    'sub-pixel perfect sales carriers earn ≈0 on every length-class reading',
+    subLen < 0.02,
+    `max length-class q ${subLen.toFixed(4)} (angle residue keeps aggregated at ${subRel.aggregated.toFixed(3)} — scale-free by design)`,
+  );
   const rewards = [0.001, 0.01, 0.1, 1].map((k) => scoreExact(scaled(k), d).reward);
   const monotone = rewards.every((r, i) => i === 0 || r > rewards[i - 1]!);
   check('3', 'growing the spread recovers the score', monotone, rewards.map((r) => r.toFixed(3)).join(' < '));

@@ -5,7 +5,7 @@ import { val, type Value } from '../autograd/engine';
 import { seedToFigure } from '../figure';
 import type { Page, PositedFrame } from '../frame';
 import { pageFromConfig } from '../frame';
-import { ScaleType } from '../scale';
+import { ScaleType, commensurability } from '../scale';
 import { ANCHORS, PARTS, READINGS } from './types';
 import {
   REGISTRY,
@@ -280,13 +280,17 @@ describe('measurements: v2 distinct-carrier dedup (audit: 10 of 26 cells were ex
     expect(() => carrierFor('page.nothing.here', all)).toThrow(/No distinct carrier/);
   });
 
-  it('distinct census: 12 ratio + 4 cyclic under the default geometry; sales sees 12, order 16', () => {
+  it('distinct census: 12 ratio + 4 cyclic under the default geometry; BOTH relations see all 16 (v2.2)', () => {
     const all = golden();
     const byStamp: Record<string, number> = { ratio: 0, cyclic: 0, interval: 0, ordinal: 0 };
     for (const c of all) byStamp[c.stamp]!++;
     expect(byStamp[ScaleType.Ratio]).toBe(12); // 6 point projections + 3 point dists + run/rise/length
     expect(byStamp[ScaleType.Cyclic]).toBe(4); // 3 point angles + tilt
     expect(byStamp[ScaleType.Interval]).toBe(0); // every page projection was upgraded by its frame twin
+    // v2.2 (ratio ≤ cyclic restored): sales is commensurable with EVERY distinct carrier under the
+    // default geometry — no reading is structurally blocked from any relation (user directive).
+    expect(all.filter((c) => commensurability(ScaleType.Ratio, c.stamp)).length).toBe(16);
+    expect(all.filter((c) => commensurability(ScaleType.Ordinal, c.stamp)).length).toBe(16);
   });
 });
 
