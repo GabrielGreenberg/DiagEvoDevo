@@ -313,9 +313,65 @@ user chose survives unchanged.
   dot/lollipop via `proj⊥`). Both are pluggable behind one interface but are not the
   default objective.
 
+### Coincidence — enacted equations (v2.2)
+
+Correlational reinforcement (several readings independently tracking a relation — what the
+LSE already credits) is not the only kind of doubling. A figure can **arrange two reading
+procedures to return the same number in the same page units**: grounded vertical bars make
+`end y ≡ rise ≡ length`. Equality is proportionality **plus a shared zero and a shared
+unit** — the rung above ratio in the agreement hierarchy between carriers (order-agreement
+< affine < proportional < **identical**). It earns distinct reader benefits that mere
+correlation cannot: **mutual calibration** (two procedures agree *in one scale* — this is
+what an axis *is*: a configuration making position readings and extent readings
+co-referential), **free redundancy** (the second reading costs no additional ink or DOF),
+and **verifiability** (a reader can check an identity at a glance — the readings
+*commute*). Grounding (`start y ≡ 0`), verticality (`start x ≡ end x`), and shared
+baselines are the same species: classic chart virtues are heaps of enacted equations.
+
+The **weak (same-magnitude) version** is implemented; per relation R, over unordered
+same-unit-class pairs of its commensurable distinct carriers:
+
+```
+pair(m₁,m₂) = eq(c₁,c₂) · q₁ᵖ · q₂ᵖ        eq = exp( −mean_i (c₁ᵢ−c₂ᵢ)² / 2σ_eq² )
+relationCoin(R) = LSE-mean over pairs        bonus = w_coin · Σ_R relationCoin(R)
+S = reward + bonus − Σ penalties             (quality stays reward / #relations)
+```
+
+σ_eq is **absolute per unit class** (page units / radians — shared-unit equality is the
+point, consistent with salience's absolute θ). The fidelity gate `q₁ᵖq₂ᵖ` (salience is
+inside q) kills equal-but-meaningless and equal-but-constant pairs; random figures earn
+exactly 0. Only **achieved** identity counts: definitionally-equal cells were merged by
+the structural dedup and are one carrier — they cannot pair. Merely *proportional* pairs
+(c₂ = 2c₁) earn ≈ 0, with a smooth gradient as scales converge — the pull that walks an
+offset reading down to the baseline.
+
+Two verified caveats. **(i) The weight is a basin-selection dial, not a truth dial**
+(cf. §8's data-ink precedent): statically, legible fixtures out-rank every degenerate at
+any weight in [0, 0.3], but at w = 0.3 full-depth optimization stabilized two
+*collapse-coincidence traps* (a dot plot whose shrunken segments get `start ≡ mid ≡ end`
+for free; mid-anchored floating bars locked by a lone `mid y ≡ length` pair) — w = 0.2
+restores 6/6 legible endpoints. **(ii) The weak version cannot distinguish a collapse
+(identities by degeneration) from arranged commuting readings (identities by
+construction).** The **strong version** — requiring the readings' measurement *paths* to
+coincide as ink on the page, weak + alignment — is the principled resolution, and pairs
+naturally with the movable frame (M8). Registered open question.
+
+Empirical note (probe, 2026-07-02): with the bonus on, every evolved endpoint earns
+coincidences and 3–4/6 seeds build the full extent≡position stack — but consistently for
+the **order** relation (heights ∝ rank), with sales taking a multi-anchor position
+cluster: the **transpose** of the canonical bar chart, which at seed 3 outscores the
+golden fixture (1.846 vs 1.802). Reward and bonus are relation-symmetric, so nothing in
+the theory prefers the golden orientation — the score discovered that the canonical
+casting is not uniquely optimal.
+
+The aggregation switch `aggregation.matchBonus` (default on) is the correlational-doubling
+counterpart control: off replaces the mean-form LSE with a best-carrier-only softmax mean
+(one perfect salient carrier ⇒ relation ≈ 1; further matches add < 0.01) — an experiment
+lens on how much of the emergent structure is owed to independent doubling at all.
+
 ## 8. The penalty book — data-ink
 
-Total score is `S = reward − Σ penalties`. Penalties are **first-class, registered terms
+Total score is `S = reward + bonus − Σ penalties`. Penalties are **first-class, registered terms
 with configurable weights** — sewn in at the deepest level per Principle I, even when off.
 
 **Spuriousness = data-ink (ON by default, w = 0.25).** The v2 redesign gave this term its

@@ -26,6 +26,10 @@ import {
   clearPlateauRelEps,
   clearDisabledCarriers,
   loadDisabledCarriers,
+  clearMatchBonus,
+  clearCoincidence,
+  loadMatchBonus,
+  loadCoincidence,
 } from '../persistence/prefs';
 
 // jsdom's localStorage lacks the Storage methods in this environment (no URL origin); persistence
@@ -49,6 +53,8 @@ beforeEach(() => {
   clearMaxSteps(); // each test starts from the config-default cap
   clearPlateauRelEps(); // …and the config-default convergence strictness
   clearDisabledCarriers(); // …and every reading on
+  clearMatchBonus(); // …and both reinforcement toggles at their config defaults (on)
+  clearCoincidence();
   clearResults();
 });
 
@@ -368,6 +374,112 @@ describe('app: readings toggles (carrier on/off chips)', () => {
   });
 });
 
+describe('app: reinforcement toggles (matches / coincidence chips)', () => {
+  const rchip = (root: HTMLElement, key: string): HTMLButtonElement =>
+    q<HTMLButtonElement>(root, `#reinforcepanel .chip[data-rk="${key}"]`);
+  const rpend = (root: HTMLElement): HTMLElement =>
+    q<HTMLElement>(root, '#reinforcepanel [data-r="pending"]');
+
+  it('renders both chips ON by default with no pending hint (defaults: config on/on)', () => {
+    const { root, sessions } = mount();
+    for (const key of ['matchBonus', 'coincidence']) {
+      expect(rchip(root, key).classList.contains('off')).toBe(false);
+      expect(rchip(root, key).classList.contains('pending')).toBe(false);
+    }
+    expect(rpend(root).hidden).toBe(true);
+    // the initial session runs the config defaults
+    expect(sessions[0]!.cfg.aggregation.matchBonus).toBe(true);
+    expect(sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    root.remove();
+  });
+
+  it('clicking toggles the PENDING set only: persisted at once, live session untouched', () => {
+    const { root, sessions } = mount();
+    const before = displayedTotal(root);
+    rchip(root, 'matchBonus').click();
+    rchip(root, 'coincidence').click();
+    // persisted immediately (survives reloads)…
+    expect(loadMatchBonus()).toBe(false);
+    expect(loadCoincidence()).toBe(false);
+    // …chips show off + pending, panel hints "applies on Reset"
+    for (const key of ['matchBonus', 'coincidence']) {
+      expect(rchip(root, key).classList.contains('off')).toBe(true);
+      expect(rchip(root, key).classList.contains('pending')).toBe(true);
+    }
+    expect(rpend(root).hidden).toBe(false);
+    // ADVERSARIAL: the LIVE session keeps its objective — cfg snapshot unchanged, display unchanged
+    expect(sessions.length).toBe(1); // no new session was created
+    expect(sessions[0]!.cfg.aggregation.matchBonus).toBe(true);
+    expect(sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
+    step(root);
+    expect(displayedTotal(root)).toBe(before);
+    // clicking again re-enables and clears the hint
+    rchip(root, 'matchBonus').click();
+    rchip(root, 'coincidence').click();
+    expect(loadMatchBonus()).toBe(true);
+    expect(loadCoincidence()).toBe(true);
+    expect(rpend(root).hidden).toBe(true);
+    root.remove();
+  });
+
+  it('matchBonus applies on Reset: the NEXT session aggregates differently on the SAME seed', () => {
+    const { root, sessions } = mount();
+    const id0 = sessions[0]!.trajectories()[0]!.id;
+    const before = sessions[0]!.detail(id0)!.breakdown.total;
+    const beforeShown = displayedTotal(root);
+    rchip(root, 'matchBonus').click();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.cfg.aggregation.matchBonus).toBe(false); // the toggle BIT at construction
+    // same figure/data seeds, different RELATION AGGREGATION ⇒ a genuinely different total
+    const id0b = sessions[1]!.trajectories()[0]!.id;
+    const after = sessions[1]!.detail(id0b)!.breakdown.total;
+    expect(sessions[1]!.figureSeed).toBe(sessions[0]!.figureSeed);
+    expect(after).not.toBe(before);
+    expect(displayedTotal(root)).not.toBe(beforeShown); // visible at 3 decimals too
+    // pending == live again: hint gone, chip stays off (still applied, no longer "pending")
+    expect(rpend(root).hidden).toBe(true);
+    expect(rchip(root, 'matchBonus').classList.contains('off')).toBe(true);
+    expect(rchip(root, 'matchBonus').classList.contains('pending')).toBe(false);
+    root.remove();
+  });
+
+  it('coincidence applies on Reset: weight 0 removes exactly the bonus from the total', () => {
+    const { root, sessions } = mount();
+    const id0 = sessions[0]!.trajectories()[0]!.id;
+    const before = sessions[0]!.detail(id0)!.breakdown;
+    expect(before.bonuses.relationCoin.length).toBeGreaterThan(0); // active at defaults
+    rchip(root, 'coincidence').click();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click();
+    expect(sessions.length).toBe(2);
+    expect(sessions[1]!.cfg.bonuses.coincidence.weight).toBe(0); // off ⇒ weight 0 (core skips)
+    const after = sessions[1]!.detail(sessions[1]!.trajectories()[0]!.id)!.breakdown;
+    expect(after.bonuses.coincidence).toBe(0);
+    expect(after.bonuses.relationCoin).toEqual([]);
+    expect(after.bonuses.pairs).toEqual([]);
+    // reward and penalty are untouched — the total lost exactly the bonus term
+    expect(after.reward).toBe(before.reward);
+    expect(after.penalty).toBe(before.penalty);
+    expect(after.total).toBeCloseTo(before.total - before.bonuses.coincidence, 12);
+    root.remove();
+  });
+
+  it('round-trips a "reload": a fresh startApp restores both toggles into the INITIAL session', () => {
+    const a = mount();
+    rchip(a.root, 'matchBonus').click();
+    rchip(a.root, 'coincidence').click();
+    a.root.remove();
+    // simulate a page reload: a brand-new app instance over the same localStorage
+    const b = mount();
+    expect(b.sessions[0]!.cfg.aggregation.matchBonus).toBe(false);
+    expect(b.sessions[0]!.cfg.bonuses.coincidence.weight).toBe(0);
+    expect(rchip(b.root, 'matchBonus').classList.contains('off')).toBe(true);
+    expect(rchip(b.root, 'coincidence').classList.contains('off')).toBe(true);
+    expect(rpend(b.root).hidden).toBe(true); // pending == live: restored, not "pending"
+    b.root.remove();
+  });
+});
+
 describe('app: Save/Load', () => {
   it('Save persists the SELECTED trajectory (what the user is looking at), not best()', () => {
     const { root, sessions } = mount({ slots: 2, plateauAt: [1, 1] });
@@ -539,6 +651,52 @@ describe('app: REFERENCE cell (golden bars benchmark)', () => {
     expect(save.title).toBe(''); // the reference tooltip does not linger
     step(root); // the fresh session plateaus → done → Save re-arms for the real selection
     expect(save.disabled).toBe(false);
+    root.remove();
+  });
+
+  it('shows the golden bars\' COINCIDENT TRIPLE (end y ≡ rise ≡ length) and the bonus row', () => {
+    const { root, sessions } = mount();
+    click(refCell(root));
+    // the bonus row shows the exact weighted term of an independent rescoring under session cfg
+    const d = seedToDataSet(config.seeds.data);
+    const want = scoreExact(loudGoldenBarChart(d), d, sessions[0]!.cfg).bonuses.coincidence;
+    expect(want).toBeGreaterThan(0); // grounded vertical bars really earn the bonus
+    const row = root.querySelector('.bonusrow')!;
+    expect(row).not.toBeNull();
+    expect(row.textContent).toContain('coincidence bonus');
+    expect(row.textContent).toContain(`w ${config.bonuses.coincidence.weight}`);
+    expect(row.textContent).toContain(`+${want.toFixed(3)}`);
+    // grounding + verticality make end-y ≡ rise ≡ length: all three pairs, eq 1.00, under sales
+    const salesLine = root.querySelectorAll('.scorepanel .coinline')[0]!; // sections: sales first
+    expect(salesLine.textContent).toContain('coincident:');
+    for (const pair of ['end y ≡ rise 1.00', 'end y ≡ length 1.00', 'rise ≡ length 1.00']) {
+      expect(salesLine.textContent).toContain(pair);
+    }
+    root.remove();
+  });
+
+  it('loses the bonus when the coincidence toggle bites (NEXT session), like any cfg knob', () => {
+    const { root, sessions } = mount();
+    q<HTMLButtonElement>(root, '#reinforcepanel .chip[data-rk="coincidence"]').click();
+    click(refCell(root));
+    step(root);
+    // ADVERSARIAL: the live session's reference is a construction-time snapshot — bonus still shown
+    expect(root.querySelector('.bonusrow')).not.toBeNull();
+    q<HTMLButtonElement>(root, '[data-a="reset"]').click(); // the toggle BITES here
+    expect(sessions.length).toBe(2);
+    click(refCell(root));
+    expect(root.querySelector('.bonusrow')).toBeNull();
+    expect(root.querySelector('.coinline')).toBeNull();
+    // and the displayed total is the golden bars rescored WITHOUT the term
+    const cfg0: Config = {
+      ...config,
+      bonuses: {
+        ...config.bonuses,
+        coincidence: { ...config.bonuses.coincidence, weight: 0 },
+      },
+    };
+    expect(displayedTotal(root)).toBe(refTotal(config.seeds.data, cfg0));
+    expect(refTotal(config.seeds.data, cfg0)).not.toBe(refTotal(config.seeds.data));
     root.remove();
   });
 

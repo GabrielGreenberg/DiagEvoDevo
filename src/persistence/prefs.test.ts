@@ -15,6 +15,12 @@ import {
   loadDisabledCarriers,
   saveDisabledCarriers,
   clearDisabledCarriers,
+  loadMatchBonus,
+  saveMatchBonus,
+  clearMatchBonus,
+  loadCoincidence,
+  saveCoincidence,
+  clearCoincidence,
 } from './prefs';
 
 function memoryStorage(): Storage {
@@ -36,6 +42,8 @@ beforeEach(() => {
   clearMaxSteps();
   clearPlateauRelEps();
   clearDisabledCarriers();
+  clearMatchBonus();
+  clearCoincidence();
 });
 
 describe('prefs: persistent maxSteps', () => {
@@ -148,5 +156,59 @@ describe('prefs: persistent disabledCarriers (readings toggles)', () => {
     expect(loadDisabledCarriers()).toEqual(['a.b.c']);
     clearDisabledCarriers();
     expect(loadMaxSteps()).toBeNull();
+  });
+});
+
+describe('prefs: persistent reinforcement toggles (matchBonus / coincidence)', () => {
+  it('matchBonus round-trips BOTH boolean values exactly (reload semantics)', () => {
+    expect(loadMatchBonus()).toBeNull(); // absent → caller falls back to config default
+    saveMatchBonus(false); // false is a REAL stored state, never confused with absence
+    expect(loadMatchBonus()).toBe(false);
+    saveMatchBonus(true);
+    expect(loadMatchBonus()).toBe(true); // last write wins
+    clearMatchBonus();
+    expect(loadMatchBonus()).toBeNull();
+  });
+
+  it('coincidence round-trips BOTH boolean values exactly (reload semantics)', () => {
+    expect(loadCoincidence()).toBeNull();
+    saveCoincidence(false);
+    expect(loadCoincidence()).toBe(false);
+    saveCoincidence(true);
+    expect(loadCoincidence()).toBe(true);
+    clearCoincidence();
+    expect(loadCoincidence()).toBeNull();
+  });
+
+  it('refuses to persist garbage: non-boolean values leave the store untouched', () => {
+    saveMatchBonus(false);
+    saveCoincidence(false);
+    saveMatchBonus('yes' as unknown as boolean);
+    saveMatchBonus(1 as unknown as boolean);
+    saveCoincidence(0 as unknown as boolean);
+    saveCoincidence(null as unknown as boolean);
+    expect(loadMatchBonus()).toBe(false);
+    expect(loadCoincidence()).toBe(false);
+  });
+
+  it('garbage IN storage reads as null (fallback to config default)', () => {
+    for (const KEY of ['diagram-evolver:prefs:matchBonus', 'diagram-evolver:prefs:coincidence']) {
+      localStorage.setItem(KEY, 'TRUE'); // case matters: only the canonical serialization counts
+      localStorage.setItem(KEY, '1');
+      localStorage.setItem(KEY, 'not-a-bool');
+    }
+    expect(loadMatchBonus()).toBeNull();
+    expect(loadCoincidence()).toBeNull();
+  });
+
+  it('the two toggles are independent of each other AND of the other preferences', () => {
+    saveMatchBonus(false);
+    saveCoincidence(false);
+    saveMaxSteps(777);
+    clearMatchBonus();
+    expect(loadCoincidence()).toBe(false); // clearing one never clobbers the other
+    expect(loadMatchBonus()).toBeNull();
+    clearCoincidence();
+    expect(loadMaxSteps()).toBe(777); // …and the unrelated prefs survive both
   });
 });

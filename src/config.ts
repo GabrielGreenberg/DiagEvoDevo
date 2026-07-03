@@ -68,6 +68,82 @@ export const config = {
     // perfect carrier beats many mediocre ones" (accept gate 2's q = 0.6 cohort): β = 8 passes
     // with margin 0.09, β = 6 FAILS — do not go below 8 without revisiting that gate's math.
     beta: 8,
+    // matchBonus (default true): HOW a relation aggregates its per-carrier cells q_m.
+    //   true  — mean-form LSE (the v2 default above): one excellent carrier dominates AND every
+    //           additional matching carrier still STRICTLY raises the relation ("correlational
+    //           doubling" is credited — independent readings tracking the same relation are worth
+    //           reward). Gate 2's monotonicity invariants (scripts/accept.ts) assume THIS form;
+    //           gates run at defaults, so they only apply when matchBonus = true.
+    //   false — best-carrier-only smooth aggregation: the softmax-weighted mean
+    //           q̄ = Σ_m q_m·e^{β·q_m} / Σ_m e^{β·q_m}  (same β, smooth, ≤ max q).
+    //           A single perfect salient carrier ⇒ relation ≈ 1 (its weight e^β dwarfs the rest),
+    //           and a second perfect carrier adds < 0.01 (perfect entries already own the weight).
+    //           TRADE-OFFS (documented honestly): unlike the LSE this form is NOT monotone in
+    //           every cell — ∂q̄/∂q_j < 0 whenever q_j < q̄ − 1/β, so adding or slightly improving
+    //           a MEDIOCRE carrier DILUTES the relation (it gains softmax weight faster than it
+    //           contributes value). That is the intended semantics ("only the best reading
+    //           counts") but it removes the smooth "more matches wins" pressure the LSE supplies.
+    //           Only the RELATION aggregation switches; the data-ink penalty's smoothmax_R and the
+    //           coincidence bonus's pair aggregation stay mean-form LSE (they are max-flavored
+    //           already and their invariants depend on LSE bounds).
+    matchBonus: true,
+  },
+
+  // ── Coincidence bonus (2026-07-02, user-agreed brief): rewarding ARRANGED equality ────────────
+  // Extends the CONCEPT §6 ladder with EQUALITY — the rung above ratio — applied at the §7
+  // aggregation layer (CONCEPT.md section pending; this comment is the working spec).
+  // Beyond correlational doubling (two readings independently tracking a relation — already
+  // credited by the mean-LSE), the figure can ARRANGE two reading procedures to return the SAME
+  // NUMBER in the SAME page units (grounded vertical bars make end-y ≡ rise ≡ length; verticality
+  // makes start-x ≡ end-x ≡ mid-x). Equality = proportionality + shared zero + shared unit — the
+  // rung above ratio: mutual calibration (this is what an axis is), free redundancy (no extra
+  // ink), perceptually verifiable ("commuting readings"). WEAK version: same-magnitude equality
+  // of the 12-vectors; the strong same-ink/path version is future work. Definitionally-equal
+  // readings are already MERGED by the carrier dedup (registry.carriers), so only ACHIEVED,
+  // figure-dependent identity can ever form a pair — a merged class is one carrier, never a pair.
+  // Per relation R, over unordered pairs (m1,m2) of R's commensurable distinct carriers with the
+  // SAME unit class:
+  //   eq(c1,c2)   = exp( −mean_i (c1ᵢ−c2ᵢ)² / (2·σ_eq²) )       (σ_eq per unit class, ABSOLUTE)
+  //   pairScore   = eq(c1,c2) · q1^p · q2^p                       (q already includes salience)
+  //   relationCoin(R) = mean-form LSE over pairScores (same aggregation.beta): the best pair
+  //                     dominates, extra coincident pairs still add
+  //   bonusTotal  = weight · Σ_R relationCoin(R)
+  //   total       = reward + bonusTotal − penalty  (quality stays reward/#relations; the bonus is
+  //                                                 shown separately in the breakdown)
+  bonuses: {
+    coincidence: {
+      // Overall weight of the bonus. 0 disables the term ENTIRELY on both paths — no pair nodes
+      // are built on the tape and the exact breakdown reports empty pair lists.
+      // 0.3 → 0.2 (acceptance tuning, 2026-07-02 adversarial verification): like the data-ink
+      // weight, this knob works through the DYNAMICS (basin selection), and at 0.3 full-depth
+      // sessions on figure seeds 1 and 5 left the legible basins their w=0 controls reach for two
+      // coincidence-stabilized traps — a DOT PLOT (seed 5: every segment collapses to a point, so
+      // start≡mid≡end coincide in BOTH axes "for free"; the weak same-magnitude eq cannot tell
+      // axis-collapse from arranged commuting readings) and MID-ANCHORED bars (seed 1: the single
+      // pair mid-y ≡ length locks a bar family floating at half height, and the pair-LSE's
+      // best-pair dominance gives too little marginal pull toward the 3-pair grounded stack
+      // end-y ≡ rise ≡ length). Both traps score ≈1.74, above the legible combs (≈1.58) though
+      // far below true grounded bars (1.91). At 0.2 all six full-depth seeds end LEGIBLE (6/6,
+      // the pre-feature level) and the earned coincidences are the intended ones (axis grounding,
+      // shared-unit calibration); every static gate-1 margin passes at ANY weight in [0, 0.3]
+      // (margins are linear in the weight and pass at both ends — verified). The collapse
+      // loophole itself is inherent to the WEAK equality version and is the first thing the
+      // strong same-ink/path version should close.
+      weight: 0.2,
+      // σ_eq for 'length'-class pairs, in PAGE UNITS. Absolute (not relative) on purpose: equality
+      // in shared page units is the whole point — consistent with salience's absolute θ_len. Two
+      // readings differing by ~σ_eq per item still read as "the same number"; a 2× scale mismatch
+      // at page scale reads as different numbers (eq ≈ 0), leaving a smooth convergence gradient.
+      sigmaEqLen: 5,
+      // σ_eq for 'angle'-class pairs, in RADIANS (bearings/tilts). Compared by plain difference of
+      // atan2 values — like ordinal-from-bearings, the ±π branch cut is a documented limitation.
+      sigmaEqAngle: 0.1,
+      // p: the fidelity gate exponent — pairScore is gated by q1^p·q2^p so only pairs of carriers
+      // that BOTH genuinely carry the relation (and are salient: q includes the salience gate) can
+      // earn coincidence credit. Equal-but-meaningless (or equal-but-constant) readings earn ~0.
+      // Keep p ≥ 1: the pow gradient p·q^(p−1) must stay finite at q = 0.
+      fidelityGateP: 2,
+    },
   },
 
   // ── v2 salience: the reader-resolution gate (CONCEPT §6; home of the Cleveland–McGill anchor) ──

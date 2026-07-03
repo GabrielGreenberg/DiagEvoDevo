@@ -5,7 +5,11 @@
 // salience chip (dim below the legibility gate), per-rung mini-bars (τ signed ↑/↓, r², ratio), and
 // the salience-gated cell q. Headline quality is honest (≈0 for random figures — chance floors are
 // removed at the source). The data-ink penalty (and any other registered penalty with weight > 0)
-// gets its own row. Reads ONLY the v2 Breakdown fields — no deprecated v1 aliases.
+// gets its own row; the COINCIDENCE BONUS (config.bonuses.coincidence) gets a matching row (value
+// + weight) when the term is active, and each relation lists its top coincident pairs
+// ("end y ≡ length 1.00" — arranged equality, Breakdown.bonuses.pairs). Reads ONLY the v2
+// Breakdown fields — no deprecated v1 aliases. Stale persisted breakdowns (saved before the bonus
+// existed) may lack `bonuses`; every access is defensive so Load never breaks the panel.
 
 import type { Breakdown, CarrierScore } from '../core/score';
 import type { RungExact } from '../core/fidelity/rungs';
@@ -15,6 +19,10 @@ export interface ScorePanelData {
   steps: number;
   /** Composed live status line, e.g. "running · 1 plateaued · 2 capped" or "converged". */
   status: string;
+  /** The coincidence weight of the cfg this breakdown was scored under (session.cfg /
+   *  configSnapshot) — display only, shown on the bonus row like the penalty rows' weights.
+   *  The bonus VALUE itself lives in breakdown.bonuses. */
+  coincidenceWeight: number;
 }
 
 // Display thresholds (spec §UI v2; presentation only — the score itself is untouched by these).
@@ -54,8 +62,20 @@ function carrierRow(m: CarrierScore): string {
   </div>`;
 }
 
+/** A relation's "coincident:" line — its top pairs (Breakdown.bonuses.pairs, already truncated
+ *  and sorted by the core) as "aLabel ≡ bLabel eq". Empty string when the relation has none. */
+function coincidentLine(pairs: readonly { aLabel: string; bLabel: string; eq: number }[]): string {
+  if (pairs.length === 0) return '';
+  const items = pairs
+    .map((p) => `${esc(p.aLabel)} ≡ ${esc(p.bLabel)} ${p.eq.toFixed(2)}`)
+    .join(' · ');
+  return `<div class="coinline muted" title="coincident pairs — the figure ARRANGES these readings to return the same number in the same page units (equality kernel shown)">coincident: ${items}</div>`;
+}
+
 export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
   const b = d.breakdown;
+  // Defensive: breakdowns persisted before the coincidence term lack `bonuses` (stale Load data).
+  const bonuses = b.bonuses ?? { coincidence: 0, relationCoin: [], pairs: [] };
 
   // "N tracking" = DISTINCT carriers with q ≥ MATCH in at least one relation.
   const trackingIds = new Set<string>();
@@ -72,9 +92,18 @@ export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
           <span class="areward" title="LSE-aggregated relation score">${(100 * rel.aggregated).toFixed(0)}%</span></div>
         <div class="matchline muted">${nMatch} tracking (q ≥ ${MATCH}) · top ${Math.min(TOP_K, rel.carriers.length)} shown</div>
         ${rows}
+        ${coincidentLine(bonuses.pairs.filter((p) => p.key === rel.key))}
       </div>`;
     })
     .join('');
+
+  // Active ⇔ the core computed the term (relationCoin is empty exactly when the weight is 0).
+  const bonusRow =
+    bonuses.relationCoin.length > 0
+      ? `<div class="penrow bonusrow"><span class="pname">coincidence bonus</span>
+         <span class="muted">w ${d.coincidenceWeight}</span>
+         <span class="bval">+${bonuses.coincidence.toFixed(3)}</span></div>`
+      : '';
 
   const penaltyRows = b.penalties
     .filter((p) => p.weight > 0)
@@ -95,6 +124,7 @@ export function renderScorePanel(root: HTMLElement, d: ScorePanelData): void {
     <div class="qualtrack"><span class="qualbar" style="width:${(100 * Math.max(0, Math.min(1, b.quality))).toFixed(1)}%"></span></div>
     <div class="comphdr muted">${b.distinctCarriers} distinct carriers (census ${b.censusSize}); dim rows are below reader resolution</div>
     ${sections}
+    ${bonusRow}
     ${penaltyRows}
     <div class="statusrow muted">step ${d.steps} · ${esc(d.status)}</div>`;
 }

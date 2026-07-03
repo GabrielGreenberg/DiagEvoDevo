@@ -10,6 +10,88 @@ the same session that work happens. Never reconstruct state that belongs here.
 CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
 (`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
+### Scoring v2.2 core — coincidence bonus + matchBonus switch (2026-07-02, user-agreed brief)
+Beyond correlational doubling (mean-LSE already credits independent readings tracking a relation),
+the score now rewards COINCIDENCE: the figure ARRANGING two reading procedures to return the same
+number in the same page units (equality = proportionality + shared zero + shared unit — the rung
+above ratio; mutual calibration, free redundancy, "commuting readings"). WEAK version only
+(same-magnitude 12-vectors); strong same-ink/path version is future work. Per relation, over
+same-unit-class carrier pairs: pairScore = eq·q1^p·q2^p with eq = exp(−mean(Δ²)/(2σ_eq²)) (σ_eq
+ABSOLUTE per unit class, like salience's θ), aggregated by the same mean-LSE; total = reward +
+weight·Σ_R relationCoin − penalty; quality stays reward/#relations. Definitionally-equal readings
+never pair (dedup merged them — a class is ONE carrier); only achieved identity earns. Knobs in
+`config.bonuses.coincidence` (weight 0.3 — retuned to 0.2 by the verification pass below / σ_len 5
+/ σ_ang 0.1 / p 2; weight 0 removes the term
+bit-exactly from both paths and the tape). Also `config.aggregation.matchBonus` (default true):
+false switches relations to best-carrier-only softmax-mean aggregation (single perfect ⇒ ≈1,
+second perfect adds <0.01; documented non-monotone dilution trade-off). Both code paths in
+lockstep; eq cached per carrier pair across relations; pairs skip the tape at weight 0.
+Verified: golden earns via the NAMED end-y ≡ rise ≡ length triple (eq = 1, bonus +0.229) AND the
+start-x ≡ end-x ≡ mid-x verticality cluster; randoms ≈ 0; equal-but-meaningless q-gated ≈ 0;
+equal-but-constant salience-gated 0; baseline-grounding eq-gradient monotone (b→0 ⇒ eq→1);
+σ_eq routed per unit class (angle pairs pinned to eqGauss(σ_ang) exactly). 296 tests green
+(+24 adversarial in `core/coincidence.test.ts`), typecheck/lint/gradcheck green; eval overhead
++19% (26.5k vs 22.5k tape nodes). Breakdown gains `bonuses: {coincidence, relationCoin, pairs}`
+(top 4 pairs/relation, contribution > 0.01) — UI consumption + the two prefs toggles
+('matchBonus', 'coincidence') are the companion UI task (shipped below, same day).
+
+### Scoring v2.2 UI — reinforcement toggles + coincidence display (2026-07-02, companion task)
+UI/persistence consumption of the v2.2 core contract, done at the established layers:
+- **Reinforcement mini-panel** (`src/ui/reinforcement.ts`, sibling panel between Readings and
+  Score): two chips — "matches" (→ `aggregation.matchBonus`) and "coincidence"
+  (→ `bonuses.coincidence.weight`: off ⇒ 0, on ⇒ the config default). Exactly the readings-strip
+  pattern: persisted immediately (`persistence/prefs` boolean prefs, keys
+  `diagram-evolver:prefs:{matchBonus,coincidence}`, precedence stored > config default), pending
+  in the store, BITE at the next session (`app.sessionCfg` composes them into the snapshot);
+  chips + "applies on Reset" hint read the LIVE objective from `session.cfg`, so the panel never
+  lies. Both default ON.
+- **Score panel**: a "coincidence bonus" row (weighted value + w, mirrors the data-ink row,
+  rendered only when the term is active — `bonuses.relationCoin` nonempty) and a per-relation
+  "coincident:" line listing that relation's top pairs as "end y ≡ length 1.00"
+  (`Breakdown.bonuses.pairs`, key-filtered so pairs never leak across relations).
+  `ScorePanelData.coincidenceWeight` carries the scoring cfg's weight (session.cfg /
+  loaded configSnapshot); stale pre-bonus persisted breakdowns render defensively (no row).
+  The reference-bars cell shows its earned bonus + the end-y ≡ rise ≡ length triple (tested).
+- Tests: prefs round-trip/garbage (+5), reinforcement toggles pending/apply-at-reset/reload
+  (+5, incl. matchBonus totals differing on the same seed and coincidence removing exactly the
+  bonus), panel bonus-row/pair-lines/stale-breakdown (+5), reference triple + toggle-bite (+2).
+  313 tests green; typecheck + build green.
+
+### Scoring v2.2 adversarial verification (2026-07-02, third pass): weight 0.3 → 0.2
+Attacks run against the shipped v2.2 (probes preserved in `scratch/verify_coincidence_*.ts`):
+- **Identity farm** (static): golden beats every audit degenerate ON TOTAL with the bonus active
+  by ≥ 0.89 (both datasets); degenerates earn only 0.05–0.11 bonus vs golden's 0.21–0.33 — the
+  q-gate holds. Value-sorted bars share golden's geometry but LOSE the order-side coincidences
+  (the gate is relation-aware), so the golden-vs-value-sorted gap GROWS (+0.14 Δbonus). Gate-1
+  margins are linear in the weight and pass at both w=0 and w=0.3 ⇒ pass at any weight between.
+- **No definitional pairs**: scan of all 72 same-unit carrier pairs over random figures — none
+  with eq > 0.5 everywhere; the dedup guarantees only ACHIEVED identity can pair.
+- **Gradient pull**: lifting one golden bar off its baseline, ∂bonus/∂(start.y) restores it
+  throughout the eq kernel's basin (δ ≤ 2σ_eq); AD = FD to 1e-9 on the Value path. Past ~3σ an
+  ALTERNATE achieved identity (upside-down bar re-approaching end-y ≡ length) takes over — honest
+  far-field multimodality, bounded by σ_eq as designed.
+- **Bit-exact off-switch**: with weight 0 the scorer reproduces the pre-feature git HEAD (2b1270b)
+  BYTE-IDENTICALLY (exact totals, Value totals, gradients) on randoms + golden + degenerates
+  (twin-fingerprint diff in a HEAD worktree). matchBonus=true is bit-exact with the default path.
+- **UI truthfulness** (live preview): chips persist first and mark pending while the LIVE session
+  still shows the true objective; Reset bites (reference cell 1.911 → 1.584 = exactly −bonus);
+  reload persists; stale pre-bonus results render without the row.
+- **THE FINDING — full-depth gate 5 regressed at weight 0.3**: sessions on figure seeds 1 and 5
+  (data seed 1, full 5000-step caps) left their legible w=0 basins for two coincidence-stabilized
+  traps: a DOT PLOT (seed 5 — collapsing every segment makes start≡mid≡end coincide in both axes;
+  the weak same-magnitude eq cannot tell axis-collapse from arranged commuting readings) and
+  MID-ANCHORED bars (seed 1 — the single pair mid-y ≡ length locks bars floating at half height;
+  the pair-LSE's best-pair dominance under-pulls toward the 3-pair grounded stack). Both total
+  ≈ 1.74 — above legible combs (≈1.58), far below golden (1.91). Full-depth legibility was 4/6
+  (pre-feature 6/6). **Fix at the config layer** (the knob works through basin-selection dynamics,
+  exactly like the data-ink 0.25 → 0.5 precedent): `bonuses.coincidence.weight` 0.3 → 0.2. At 0.2
+  all six full-depth seeds end LEGIBLE and the earned coincidences are the intended ones (seed 5
+  grounds every start on the y-axis to arrange end-x ≡ run and start-y ≡ fr·start-dist, eq = 1).
+  313 tests green at the new default; golden bonus 0.219 (still material). The collapse loophole
+  is inherent to the WEAK version — first target for the strong same-ink/path version. (Also
+  isolated: the --quick 1200-step cap misses legibility even at w=0 — a cap artifact, not a
+  regression; final acceptance must run full.)
+
 ### Acceptance run (2026-07-02): 49/49 checks green, division of labor 6/6
 Full `npm run accept` (default knobs, no tuning needed): golden bars 1.506 vs every audit-winning
 degenerate 0.75–0.84, random ×50 median NEGATIVE, label-ordered > value-sorted, characterizer
@@ -278,6 +360,17 @@ each closed only when its adversarial tests pass (see `ARCHITECTURE.md §Verific
 - **Baked-in v1 decisions** (from the approved plan): posited frame FIXED (∥ page) in v1;
   FixedAssignment sales→length (#9, no frame), order→x-position (#1); weights w_ord=1<w_int=2<w_ratio=4;
   one differentiable code path (plain-number path only for display; sole value-fork is exact F_ord).
+- **Scoring v2.2 (2026-07-02): coincidence ≠ correlation.** Two carriers PROPORTIONAL to the same
+  relation are correlational doubling (mean-LSE's job); two carriers EQUAL in page units are an
+  arranged calibration (an axis in embryo) and earn a separate bonus. The eq kernel is Gaussian in
+  the per-item difference with an ABSOLUTE σ per unit class — deliberately not scale-relative,
+  because shared-unit equality IS the phenomenon (same family as salience's absolute θ). The pair
+  gate (q1·q2)^p uses the cells, so meaning and salience are inherited, never recomputed. The
+  bonus lives OUTSIDE quality (total = reward + bonus − penalty) so legibility comparisons stay
+  interpretable. `matchBonus=false` (best-carrier-only softmax mean) is the registered contrast
+  form; its non-monotonicity (mediocre dilution) is documented in config, and the accept gates'
+  monotonicity checks apply only to the default. Angle-pair eq inherits the atan2 branch-cut
+  limitation (registered with the cyclic one).
 - **Scoring v2 (2026-07-01, audit-driven; supersedes the linear comprehensive sum):** within-relation
   LSE smooth-max (more-matches as a strict-monotone bonus, never a linear trade); salience gate as
   the reader model; chance-corrected direction-symmetric rungs (τ_sym; signed-safe base·coh ratio

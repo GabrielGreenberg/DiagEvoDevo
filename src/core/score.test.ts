@@ -314,7 +314,8 @@ describe('score v2: data-ink penalty (spuriousness, ON by default at 0.25)', () 
     expect(gInk.weight).toBeGreaterThan(0);
     expect(rInk.weighted).toBeGreaterThan(gInk.weighted + 0.05); // loud meaningless variation costs
     expect(gInk.value).toBeGreaterThanOrEqual(0); // mean-LSE keeps every ink term ≥ 0
-    expect(g.total).toBeCloseTo(g.reward - g.penalty, 9);
+    // v2.2: total = reward + coincidence bonus − penalty (bonus shown separately from quality)
+    expect(g.total).toBeCloseTo(g.reward + g.bonuses.coincidence - g.penalty, 9);
   });
   it('quiet unassigned DOF cost nothing: golden (constant baseline/tilt/run) pays little ink', () => {
     const gInk = scoreExact(golden, data).penalties.find((p) => p.name === 'spuriousness')!;

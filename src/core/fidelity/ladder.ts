@@ -59,6 +59,67 @@ export function lseMeanN(qs: ArrayLike<number>, beta: number): number {
   return Math.log(s / n) / beta;
 }
 
+/**
+ * Best-carrier-only smooth aggregation (config.aggregation.matchBonus = false): the softmax-
+ * weighted mean q̄ = Σ qᵢ·e^(β·qᵢ) / Σ e^(β·qᵢ). Smooth, ∈ [min q, max q]; a single dominant
+ * entry ⇒ q̄ ≈ max. NOT monotone in every entry (∂q̄/∂qⱼ = (wⱼ/W)·(1 + β·(qⱼ − q̄)) < 0 when
+ * qⱼ < q̄ − 1/β): adding/improving a far-below-leader entry slightly DILUTES the aggregate —
+ * the documented trade-off of best-only semantics (see the config comment). Composed from
+ * gradchecked primitives only (exp/mul/add/div).
+ */
+export function softmaxMean(qs: Value[], beta: number): Value {
+  if (qs.length === 0) return val(0);
+  const ws = qs.map((q) => exp(mul(val(beta), q)));
+  let num: Value = mul(qs[0]!, ws[0]!);
+  let den: Value = ws[0]!;
+  for (let i = 1; i < qs.length; i++) {
+    num = add(num, mul(qs[i]!, ws[i]!));
+    den = add(den, ws[i]!);
+  }
+  return div(num, den);
+}
+
+/** Exact twin of softmaxMean (plain numbers). */
+export function softmaxMeanN(qs: ArrayLike<number>, beta: number): number {
+  const n = qs.length;
+  if (n === 0) return 0;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.exp(beta * qs[i]!);
+    num += qs[i]! * w;
+    den += w;
+  }
+  return num / den;
+}
+
+/**
+ * Coincidence equality kernel (config.bonuses.coincidence): eq = exp(−mean_i (aᵢ−bᵢ)² / (2σ²)).
+ * = 1 iff the two 12-vectors return the SAME number per item in shared units; a proportional-but-
+ * differently-scaled pair (b = k·a, k ≠ 1) at page scale earns ≈ 0, with a smooth monotone
+ * convergence gradient as k → 1. σ is ABSOLUTE per unit class (page units / radians) — shared-unit
+ * equality is the point. Composed from gradchecked primitives only.
+ */
+export function eqGauss(a: Value[], b: Value[], sigma: number): Value {
+  const sq = a.map((ai, i) => {
+    const d = sub(ai, b[i]!);
+    return mul(d, d);
+  });
+  return exp(neg(div(mean(sq), val(2 * sigma * sigma))));
+}
+
+/** Exact twin of eqGauss (plain numbers). */
+export function eqGaussN(a: ArrayLike<number>, b: ArrayLike<number>, sigma: number): number {
+  const n = a.length;
+  if (n === 0) return 1;
+  let s = 0;
+  for (let i = 0; i < n; i++) {
+    const d = a[i]! - b[i]!;
+    s += d * d;
+  }
+  return Math.exp(-(s / n) / (2 * sigma * sigma));
+}
+
 // ── ordinal rung ─────────────────────────────────────────────────────────────────
 
 /**

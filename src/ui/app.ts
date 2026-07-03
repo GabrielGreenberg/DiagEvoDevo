@@ -18,6 +18,10 @@
 //     but applies at the NEXT session only: newSession composes {...config, carriers: {disabled}}
 //     for session construction, while the panel/chips read the LIVE objective from the SESSION's
 //     snapshotted cfg, so the display never lies about the running objective.
+//   • REINFORCEMENT TOGGLES (reinforcement mini-panel) — "matches" (aggregation.matchBonus) and
+//     "coincidence" (bonuses.coincidence.weight: off ⇒ 0, on ⇒ the config default). Exactly the
+//     carrier-toggle pattern: persisted immediately (prefs), composed into the NEXT session's cfg,
+//     live values read back from session.cfg (pending chips + hint while they differ).
 //   • REFERENCE CELL (config.ui.showReferenceBars) — a permanent benchmark FIRST in the gallery:
 //     the golden bars of the session's dataset, scored ONCE per session under the SESSION's
 //     snapshotted cfg (so toggles/knobs apply) and rebuilt on Reset / new seeds. Selectable via
@@ -37,6 +41,10 @@ import {
   savePlateauRelEps,
   loadDisabledCarriers,
   saveDisabledCarriers,
+  loadMatchBonus,
+  saveMatchBonus,
+  loadCoincidence,
+  saveCoincidence,
 } from '../persistence/prefs';
 import { createStore, type AppState } from './store';
 import { buildReference, REFERENCE_ID, type ReferenceView } from './reference';
@@ -47,6 +55,7 @@ import { renderDataPanel } from './dataPanel';
 import { renderScorePanel } from './scorePanel';
 import { mountControls, updateControls, type ControlCallbacks } from './controls';
 import { mountCarrierStrip, updateCarrierStrip } from './carrierStrip';
+import { mountReinforcement, updateReinforcement } from './reinforcement';
 
 const randomSeed = (): number => Math.floor(Math.random() * 1_000_000) + 1;
 
@@ -55,9 +64,35 @@ const randomSeed = (): number => Math.floor(Math.random() * 1_000_000) + 1;
 const defaultFactory: SessionFactory = (figureSeed, dataSeed, cfg) =>
   createSession(figureSeed, dataSeed, cfg);
 
-/** The per-session config: base config plus the pending carrier toggles (sessions snapshot it). */
-function sessionCfg(disabled: readonly string[]): Config {
-  return { ...config, carriers: { disabled: [...disabled] } };
+/** The pending toggle state a session cfg is composed from (store fields, prefs-backed). */
+interface PendingToggles {
+  disabledCarriers: readonly string[];
+  matchBonus: boolean;
+  coincidence: boolean;
+}
+
+/** The per-session config: base config plus the pending carrier + reinforcement toggles
+ *  (sessions snapshot it at construction). coincidence maps to the WEIGHT: off ⇒ 0 (the core
+ *  skips the term entirely), on ⇒ the config default. */
+function sessionCfg(t: PendingToggles): Config {
+  return {
+    ...config,
+    carriers: { disabled: [...t.disabledCarriers] },
+    aggregation: { ...config.aggregation, matchBonus: t.matchBonus },
+    bonuses: {
+      ...config.bonuses,
+      coincidence: {
+        ...config.bonuses.coincidence,
+        weight: t.coincidence ? config.bonuses.coincidence.weight : 0,
+      },
+    },
+  };
+}
+
+/** The coincidence weight a breakdown was scored under (display: the bonus row's "w"). Defensive:
+ *  stale persisted configSnapshots predate the bonuses block. */
+function coinWeightOf(cfg: Config | undefined): number {
+  return cfg?.bonuses?.coincidence?.weight ?? 0;
 }
 
 export function startApp(root: HTMLElement, makeSession: SessionFactory = defaultFactory): void {
@@ -75,6 +110,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       <aside class="sidepane">
         <div class="panel datapanel" id="datapanel"></div>
         <div class="panel readingspanel" id="readingspanel"></div>
+        <div class="panel reinforcepanel" id="reinforcepanel"></div>
         <div class="panel scorepanel" id="scorepanel"></div>
       </aside>
     </main>`;
@@ -84,6 +120,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   const controlsRoot = root.querySelector('#controls') as HTMLElement;
   const dataRoot = root.querySelector('#datapanel') as HTMLElement;
   const readingsRoot = root.querySelector('#readingspanel') as HTMLElement;
+  const reinforceRoot = root.querySelector('#reinforcepanel') as HTMLElement;
   const scoreRoot = root.querySelector('#scorepanel') as HTMLElement;
   const caption = root.querySelector('#figcaption') as HTMLElement;
 
@@ -99,14 +136,25 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   const makeReference = (dataSeed: number, session: SessionApi): ReferenceView | null =>
     config.ui.showReferenceBars ? buildReference(dataSeed, session.cfg) : null;
 
-  // maxSteps / plateauRelEps / disabled-readings precedence: localStorage > config default.
+  // maxSteps / plateauRelEps / disabled-readings / reinforcement precedence: localStorage >
+  // config default (the coincidence default is "the config weight is nonzero", i.e. ON).
   const initialMaxSteps = loadMaxSteps() ?? config.converge.maxSteps;
   const initialPlateauRelEps = loadPlateauRelEps() ?? config.converge.plateauRelEps;
   // Canonicalize at the boundary (registry.canonicalDisabledIds): stored/config ids may be
   // merged-away ALIASES (the census filter is lenient) or stale garbage — the strip keys chips by
   // canonical id, so the pending set must be canonical or the chips would lie about the census.
   const initialDisabled = canonicalDisabledIds(loadDisabledCarriers() ?? config.carriers.disabled);
-  const initialSession = makeSession(config.seeds.figure, config.seeds.data, sessionCfg(initialDisabled));
+  const initialMatchBonus = loadMatchBonus() ?? config.aggregation.matchBonus;
+  const initialCoincidence = loadCoincidence() ?? config.bonuses.coincidence.weight !== 0;
+  const initialSession = makeSession(
+    config.seeds.figure,
+    config.seeds.data,
+    sessionCfg({
+      disabledCarriers: initialDisabled,
+      matchBonus: initialMatchBonus,
+      coincidence: initialCoincidence,
+    }),
+  );
   if (initialMaxSteps !== config.converge.maxSteps) initialSession.setMaxSteps(initialMaxSteps);
   if (initialPlateauRelEps !== config.converge.plateauRelEps) {
     initialSession.setPlateauRelEps(initialPlateauRelEps);
@@ -122,6 +170,8 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     maxSteps: initialMaxSteps,
     plateauRelEps: initialPlateauRelEps,
     disabledCarriers: initialDisabled,
+    matchBonus: initialMatchBonus,
+    coincidence: initialCoincidence,
     selectedId: firstId(initialSession), // sticky selection defaults to the first trajectory
     loaded: null,
     saveCount: 0,
@@ -133,11 +183,15 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   }
 
   /** Fresh session for (possibly new) seeds. This is the ONLY full display clear (explicit Reset /
-   *  seed change); maxSteps, plateauRelEps AND the carrier toggles PERSIST across it (store +
-   *  localStorage) — this is also where pending toggles finally BITE (snapshotted into the cfg). */
+   *  seed change); maxSteps, plateauRelEps AND the carrier/reinforcement toggles PERSIST across it
+   *  (store + localStorage) — this is also where pending toggles finally BITE (snapshotted cfg). */
   function newSession(figureSeed: number, dataSeed: number): void {
-    const { maxSteps, plateauRelEps, disabledCarriers } = store.get();
-    const session = makeSession(figureSeed, dataSeed, sessionCfg(disabledCarriers));
+    const { maxSteps, plateauRelEps, disabledCarriers, matchBonus, coincidence } = store.get();
+    const session = makeSession(
+      figureSeed,
+      dataSeed,
+      sessionCfg({ disabledCarriers, matchBonus, coincidence }),
+    );
     session.setMaxSteps(maxSteps);
     session.setPlateauRelEps(plateauRelEps);
     mainView = createViewport();
@@ -216,6 +270,23 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     },
   });
 
+  // REINFORCEMENT toggles: same pattern as the readings strip — persist immediately (prefs),
+  // pending in the store, bite at the NEXT session (sessions snapshot their cfg).
+  mountReinforcement(reinforceRoot, {
+    onToggleReinforcement: (key) => {
+      const s = store.get();
+      if (key === 'matchBonus') {
+        const next = !s.matchBonus;
+        saveMatchBonus(next); // persist FIRST: survives Reset, new seeds, and reloads
+        store.set({ matchBonus: next }); // pending only — the live session is untouched
+      } else {
+        const next = !s.coincidence;
+        saveCoincidence(next); // persist FIRST: survives Reset, new seeds, and reloads
+        store.set({ coincidence: next }); // pending only — the live session is untouched
+      }
+    },
+  });
+
   // Sticky selection: the ONLY place selectedId changes besides newSession — a thumbnail click
   // (the reference cell included: it selects via the sentinel REFERENCE_ID like any thumbnail).
   stripRoot.addEventListener('click', (e) => {
@@ -237,6 +308,12 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
     updateCarrierStrip(readingsRoot, {
       pendingDisabled: new Set(s.disabledCarriers),
       liveDisabled: new Set(s.session.cfg.carriers?.disabled ?? []),
+    });
+    updateReinforcement(reinforceRoot, {
+      pendingMatchBonus: s.matchBonus,
+      pendingCoincidence: s.coincidence,
+      liveMatchBonus: s.session.cfg.aggregation?.matchBonus ?? true,
+      liveCoincidence: coinWeightOf(s.session.cfg) !== 0,
     });
     caption.textContent = s.loaded
       ? `Loaded — figure seed ${s.loaded.figureSeed}, data seed ${s.loaded.dataSeed}, ${s.loaded.steps} steps${s.loaded.convergedByCap ? ' (by cap)' : ''}`
@@ -267,7 +344,13 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       const view = updateViewport(createViewport(), s.loaded.figure, posited, 1);
       renderCanvas(canvas, s.loaded.figure, view, { labels: s.loaded.data.labels, frame: posited });
       stripRoot.innerHTML = '';
-      renderScorePanel(scoreRoot, { breakdown: s.loaded.score, steps: s.loaded.steps, status: 'loaded' });
+      renderScorePanel(scoreRoot, {
+        breakdown: s.loaded.score,
+        steps: s.loaded.steps,
+        status: 'loaded',
+        // the cfg the LOADED result was scored under (stale snapshots read as weight 0)
+        coincidenceWeight: coinWeightOf(s.loaded.configSnapshot),
+      });
       return;
     }
     // STICKY selection drives the display: session.best() is deliberately absent here. The
@@ -281,13 +364,19 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
         breakdown: reference.breakdown,
         steps: st.steps,
         status: `reference bars (not evolved) · ${st.text}`,
+        coincidenceWeight: coinWeightOf(s.session.cfg), // the reference scores under session.cfg
       });
     } else {
       const sel = s.session.detail(s.selectedId) ?? s.session.detail(all[0]?.id ?? 0);
       if (sel) {
         updateViewport(mainView, sel.figure, posited); // expand-only lerp; never refits
         renderCanvas(canvas, sel.figure, mainView, { labels: liveData.labels, frame: posited });
-        renderScorePanel(scoreRoot, { breakdown: sel.breakdown, steps: st.steps, status: st.text });
+        renderScorePanel(scoreRoot, {
+          breakdown: sel.breakdown,
+          steps: st.steps,
+          status: st.text,
+          coincidenceWeight: coinWeightOf(s.session.cfg),
+        });
       }
     }
     renderTrajStrip(stripRoot, all, stripState, s.selectedId, reference);

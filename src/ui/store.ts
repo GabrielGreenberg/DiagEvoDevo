@@ -31,6 +31,11 @@ export interface AppState {
    *  (prefs) but — unlike the live knobs above — applies only at the NEXT session (Reset / new
    *  seed): sessions snapshot their cfg at construction (spec: carrier toggles). */
   disabledCarriers: readonly string[];
+  /** PENDING reinforcement toggles (prefs-backed, next-session, same pattern as disabledCarriers):
+   *  matchBonus → cfg.aggregation.matchBonus (independent doubling credited); coincidence →
+   *  cfg.bonuses.coincidence.weight (off ⇒ 0, on ⇒ the config default — arranged equality). */
+  matchBonus: boolean;
+  coincidence: boolean;
   loaded: SessionResult | null; // a loaded saved result being reviewed (overrides the live figure)
   saveCount: number;
 }

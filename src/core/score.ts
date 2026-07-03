@@ -4,15 +4,24 @@
 //
 //   cell   q_m(R) = salience(c_m) · Σ_rungs w_r·F_r(c_m, v_R) / maxRung(R)      ∈ [0,1]
 //   relation(R)   = (1/β) · log( mean_m exp(β·q_m(R)) )                          ∈ [0,1]  (LSE)
+//                   (matchBonus=false: softmax-weighted mean instead — best carrier only)
 //   reward        = Σ_R relation(R)                                              ∈ [0, #relations]
 //   penalty       = w_ink · mean_m [ salience(c_m)·(1 − smoothmax_R q_m(R)) ] + other registered terms
-//   S             = reward − penalty ;   quality = reward / #relations
+//   bonus         = w_coin · Σ_R LSE_pairs[ eq(c_m1,c_m2) · q_m1^p · q_m2^p ]    (coincidence, §config)
+//   S             = reward + bonus − penalty ;   quality = reward / #relations (bonus shown separately)
 //
 // with m ranging over the DEDUPED distinct carriers (measurements/registry.carriers), each extracted
 // exactly ONCE per eval and reused across relations. The LSE replaces v1's flat sum (audit: linear
 // summing made "everything ∝ value" mush the optimum); salience is the reader-resolution gate
 // (sub-legible carriers earn ~0 and aren't worth ink); the data-ink term charges for salient
 // variation that carries nothing.
+//
+// The COINCIDENCE bonus (config.bonuses.coincidence, 2026-07-02) rewards ARRANGED equality: pairs
+// of a relation's commensurable carriers, same unit class, that the figure makes return the SAME
+// number in the SAME page units (grounded vertical bars: end-y ≡ rise ≡ length). Pairs reuse the
+// already-extracted carrier vectors and the already-computed cells q — no re-extraction — and eq is
+// cached per carrier pair across relations (sales' pairs are a subset of order's). weight = 0 skips
+// the term entirely: no pair nodes on the tape, total stays bit-exactly reward − penalty.
 //
 // FIXED scoring (config.scoring = 'fixed') collapses each relation to its single configured carrier,
 // scored with the SAME v2 ladder + salience (LSE over one cell = the cell) — kept for comparability.
@@ -21,7 +30,7 @@
 // the per-relation / per-carrier breakdown for the panel). The only deliberate value-fork is the
 // ordinal rung (legibility-floored logistic surrogate vs exact Kendall τ).
 
-import { Value, val, add, sub, mul, div } from './autograd/engine';
+import { Value, val, add, sub, mul, div, pow } from './autograd/engine';
 import { variance } from './autograd/ops';
 import { varianceN } from './statsN';
 import { config, type Config } from '../config';
@@ -32,6 +41,7 @@ import { pageFromConfig, frameFromConfig } from './frame';
 import { commensurability } from './scale';
 import type { ScaleType } from './scale';
 import { REGISTRY, carriers, carrierFor, type Carrier } from './measurements/registry';
+import type { UnitClass } from './measurements/types';
 import {
   rewardValue,
   rewardExact,
@@ -39,7 +49,15 @@ import {
   thetaFor,
   type RungName,
 } from './fidelity/rungs';
-import { lseMean, lseMeanN, fOrdExact } from './fidelity/ladder';
+import {
+  lseMean,
+  lseMeanN,
+  softmaxMean,
+  softmaxMeanN,
+  eqGauss,
+  eqGaussN,
+  fOrdExact,
+} from './fidelity/ladder';
 import {
   totalPenaltyValue,
   totalPenaltyExact,
@@ -89,12 +107,44 @@ function salienceExact(c: ArrayLike<number>, theta: number): number {
   return v / (v + theta * theta);
 }
 
+// ── relation aggregation (config.aggregation.matchBonus) ───────────────────────
+
+/** matchBonus=true: mean-form LSE (correlational doubling credited — strictly monotone);
+ *  false: best-carrier-only softmax-weighted mean (see the config comment for its trade-offs). */
+function aggregateValue(qs: Value[], cfg: Config): Value {
+  return cfg.aggregation.matchBonus
+    ? lseMean(qs, cfg.aggregation.beta)
+    : softmaxMean(qs, cfg.aggregation.beta);
+}
+
+/** Exact twin of aggregateValue. */
+function aggregateExact(qs: ArrayLike<number>, cfg: Config): number {
+  return cfg.aggregation.matchBonus
+    ? lseMeanN(qs, cfg.aggregation.beta)
+    : softmaxMeanN(qs, cfg.aggregation.beta);
+}
+
+// ── coincidence bonus (config.bonuses.coincidence — see the file header) ───────
+
+/** σ_eq for a unit class: ABSOLUTE page units for lengths/positions, radians for bearings. */
+function sigmaEqFor(unit: UnitClass, cfg: Config): number {
+  return unit === 'angle' ? cfg.bonuses.coincidence.sigmaEqAngle : cfg.bonuses.coincidence.sigmaEqLen;
+}
+
+/** Unordered-pair cache key: eq(c1,c2) depends only on the carrier pair, never on the relation
+ *  (sales' candidate pairs are a subset of order's) — computed once per eval, reused. */
+function pairKey(a: Carrier, b: Carrier): string {
+  return a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+}
+
 // ── differentiable path ─────────────────────────────────────────────────────────
 
 export interface ScoreValue {
-  total: Value; // reward − penalty
+  total: Value; // reward + bonus − penalty (bonus term absent from the tape when its weight is 0)
   reward: Value;
   penalty: Value;
+  /** The coincidence bonus w_coin·Σ_R relationCoin(R). A detached val(0) when the weight is 0. */
+  bonus: Value;
 }
 
 interface CellStateValue {
@@ -142,7 +192,40 @@ export function scoreValue(
       cell.q.set(rel.key, q);
       qs.push(q);
     }
-    reward = add(reward, lseMean(qs, cfg.aggregation.beta));
+    reward = add(reward, aggregateValue(qs, cfg));
+  }
+
+  // Coincidence bonus (file header; config.bonuses.coincidence): per relation, pairs of its
+  // commensurable carriers with the SAME unit class, scored eq·qa^p·qb^p on the ALREADY-extracted
+  // vectors and ALREADY-computed cells (no re-extraction), aggregated by the same mean-form LSE.
+  // weight === 0 skips the block entirely — zero pair nodes on the tape, total root stays sub().
+  const wCoin = cfg.bonuses.coincidence.weight;
+  let bonus: Value = val(0);
+  if (wCoin !== 0) {
+    const p = cfg.bonuses.coincidence.fidelityGateP;
+    const eqCache = new Map<string, Value>();
+    let coinSum: Value = val(0);
+    for (const { rel, cands } of perRel) {
+      const pairScores: Value[] = [];
+      for (let i = 0; i < cands.length; i++) {
+        for (let j = i + 1; j < cands.length; j++) {
+          const a = cands[i]!;
+          const b = cands[j]!;
+          if (a.unitClass !== b.unitClass) continue;
+          const key = pairKey(a, b);
+          let eq = eqCache.get(key);
+          if (eq === undefined) {
+            eq = eqGauss(cells.get(a.id)!.c, cells.get(b.id)!.c, sigmaEqFor(a.unitClass, cfg));
+            eqCache.set(key, eq);
+          }
+          const qa = cells.get(a.id)!.q.get(rel.key)!;
+          const qb = cells.get(b.id)!.q.get(rel.key)!;
+          pairScores.push(mul(eq, mul(pow(qa, p), pow(qb, p))));
+        }
+      }
+      if (pairScores.length > 0) coinSum = add(coinSum, lseMean(pairScores, cfg.aggregation.beta));
+    }
+    bonus = mul(val(wCoin), coinSum);
   }
 
   const cellQ: CellQValue[] = [...cells.values()].map((s) => ({
@@ -160,7 +243,8 @@ export function scoreValue(
     cells: cellQ,
   };
   const penalty = totalPenaltyValue(leaves, ctx).total;
-  return { total: sub(reward, penalty), reward, penalty };
+  const base = sub(reward, penalty);
+  return { total: wCoin !== 0 ? add(base, bonus) : base, reward, penalty, bonus };
 }
 
 // ── exact path (display) ──────────────────────────────────────────────────────────
@@ -180,18 +264,41 @@ export interface CarrierScore {
 export interface RelationBreakdown {
   key: 'sales' | 'order';
   dataType: ScaleType;
-  aggregated: number; // the LSE ∈ [0,1] — this relation's contribution to the reward
+  aggregated: number; // the aggregate ∈ [0,1] (LSE; softmax mean when matchBonus=false) — this relation's reward share
   carriers: CarrierScore[]; // sorted by q, best first
 }
 
+/** One coincident carrier pair in a relation's coincidence breakdown. */
+export interface CoincidencePair {
+  key: string; // relation key
+  a: string; // canonical carrier id
+  b: string;
+  aLabel: string;
+  bLabel: string;
+  eq: number; // equality kernel ∈ [0,1] (1 = same number in the same page units, per item)
+  contribution: number; // pairScore = eq·qa^p·qb^p — this pair's entry in the relation's pair-LSE
+}
+
+/** The coincidence bonus breakdown (config.bonuses.coincidence). */
+export interface BonusBreakdown {
+  /** weight · Σ_R relationCoin — the term that enters `total`. 0 when the weight is 0. */
+  coincidence: number;
+  /** Per-relation pair-LSE ∈ [0,1] (unweighted). Empty when the term is disabled. */
+  relationCoin: { key: string; value: number }[];
+  /** Top pairs — ≤ 4 per relation, contribution > 0.01 only (display truncation; the LSE above
+   *  runs over EVERY pair) — sorted by contribution, best first. */
+  pairs: CoincidencePair[];
+}
+
 export interface Breakdown {
-  total: number; // reward − penalty
+  total: number; // reward + bonuses.coincidence − penalty
   reward: number; // Σ_R relation(R) ∈ [0, #relations]
   penalty: number;
-  maxReward: number; // #relations (each LSE contributes ≤ 1)
-  quality: number; // reward / maxReward ∈ [0,1] (~0 for random figures: chance floors removed)
+  maxReward: number; // #relations (each relation aggregate contributes ≤ 1)
+  quality: number; // reward / maxReward ∈ [0,1] (~0 for random figures: chance floors removed; bonus EXCLUDED)
   relations: RelationBreakdown[];
   penalties: PenaltyTermExact[];
+  bonuses: BonusBreakdown; // the coincidence term, shown separately from reward/quality
   distinctCarriers: number; // ACTIVE deduped carrier count (16 under the v1 geometry, minus toggles)
   censusSize: number; // raw measurement census (26) — kept for the theory display
 }
@@ -250,7 +357,7 @@ export function scoreExact(
       });
     }
     rows.sort((a, b) => b.q - a.q);
-    const aggregated = lseMeanN(qs, cfg.aggregation.beta);
+    const aggregated = aggregateExact(qs, cfg);
     relations.push({
       key: rel.key,
       dataType: rel.type,
@@ -258,6 +365,53 @@ export function scoreExact(
       carriers: rows,
     });
     reward += aggregated;
+  }
+
+  // Coincidence bonus — exact twin of the scoreValue block, plus the pair breakdown.
+  const wCoin = cfg.bonuses.coincidence.weight;
+  const bonuses: BonusBreakdown = { coincidence: 0, relationCoin: [], pairs: [] };
+  if (wCoin !== 0) {
+    const p = cfg.bonuses.coincidence.fidelityGateP;
+    const eqCache = new Map<string, number>();
+    let coinSum = 0;
+    for (const { rel, cands } of perRel) {
+      const pairScores: number[] = [];
+      const pairRows: CoincidencePair[] = [];
+      for (let i = 0; i < cands.length; i++) {
+        for (let j = i + 1; j < cands.length; j++) {
+          const a = cands[i]!;
+          const b = cands[j]!;
+          if (a.unitClass !== b.unitClass) continue;
+          const key = pairKey(a, b);
+          let eq = eqCache.get(key);
+          if (eq === undefined) {
+            eq = eqGaussN(cells.get(a.id)!.c, cells.get(b.id)!.c, sigmaEqFor(a.unitClass, cfg));
+            eqCache.set(key, eq);
+          }
+          const qa = cells.get(a.id)!.q.get(rel.key)!;
+          const qb = cells.get(b.id)!.q.get(rel.key)!;
+          const contribution = eq * Math.pow(qa, p) * Math.pow(qb, p);
+          pairScores.push(contribution);
+          pairRows.push({
+            key: rel.key,
+            a: a.id,
+            b: b.id,
+            aLabel: a.label,
+            bLabel: b.label,
+            eq,
+            contribution,
+          });
+        }
+      }
+      const value = lseMeanN(pairScores, cfg.aggregation.beta);
+      bonuses.relationCoin.push({ key: rel.key, value });
+      coinSum += value;
+      // Display truncation only (the LSE above used every pair): top 4, contribution > 0.01.
+      pairRows.sort((x, y) => y.contribution - x.contribution);
+      for (const row of pairRows.slice(0, 4)) if (row.contribution > 0.01) bonuses.pairs.push(row);
+    }
+    bonuses.pairs.sort((x, y) => y.contribution - x.contribution);
+    bonuses.coincidence = wCoin * coinSum;
   }
 
   const cellQ: CellQExact[] = [...cells.values()].map((s) => ({
@@ -276,14 +430,17 @@ export function scoreExact(
   };
   const pen = totalPenaltyExact(figure, ctx);
   const maxReward = relations.length;
+  // Same float association as scoreValue: (reward − penalty) + bonus, bonus absent when w = 0.
+  const base = reward - pen.total;
   return {
-    total: reward - pen.total,
+    total: wCoin !== 0 ? base + bonuses.coincidence : base,
     reward,
     penalty: pen.total,
     maxReward,
     quality: maxReward > 0 ? reward / maxReward : 0,
     relations,
     penalties: pen.terms,
+    bonuses,
     distinctCarriers: all.length,
     censusSize: REGISTRY.size,
   };

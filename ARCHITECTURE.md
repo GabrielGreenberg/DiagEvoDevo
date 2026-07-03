@@ -253,6 +253,35 @@ never verify by eyeballing. Add to this list as the system grows.
 - Autograd gradient points downhill: a small step along `−∇S` decreases `S` for random figures
   away from optima.
 
+**Coincidence bonus (v2.2) & aggregation switch**
+- `eq(c, c) = 1` exactly; `eq(2·c, c) ≈ 0` at page scale (proportionality alone earns nothing) with
+  a strictly monotone convergence gradient as scales converge (`k → 1`) and as an offset zero
+  grounds (`baseline b → 0` on golden bars ⇒ eq(rise, end-y) → 1).
+- Golden bars earn the bonus through the NAMED `end-y ≡ rise ≡ length` triple (and the
+  `start-x ≡ end-x ≡ mid-x` verticality cluster for order); random figures earn ≈ 0.
+- The pair gate inherits the cells: equal-but-MEANINGLESS carriers ⇒ ≈ 0 (q inside the gate);
+  equal-but-CONSTANT carriers ⇒ 0 (salience inside q); a proportional-but-different-scale carrier
+  (mid-y at k/2) never pairs even at q ≈ 1. Merged (definitionally equal) readings cannot pair —
+  the dedup made them one carrier; only achieved identity counts.
+- σ_eq is routed per unit class: angle pairs score in radians (σ_eqAngle), length pairs in page
+  units (σ_eqLen); changing σ_eqAngle never moves a length-only relation (bit-identical).
+- `weight = 0` removes the term BIT-EXACTLY from both paths and the tape (total root stays
+  `sub(reward, penalty)`; strictly fewer nodes; exact path reports the disabled shape).
+- Value ≈ exact at small `T` including the bonus; the full-score gradcheck passes with the bonus
+  ACTIVE (jittered golden, eq ≈ 1 region) and under `matchBonus = false`.
+- `matchBonus = false` (best-carrier-only softmax mean): one perfect salient carrier ⇒ relation
+  ≈ 1; a second perfect carrier adds < 0.01; the mediocre-dilution non-monotonicity is documented
+  and pinned. The LSE monotonicity invariants above apply to `matchBonus = true` (the default,
+  which the acceptance gates run at).
+- The bonus WEIGHT is a basin-selection dial (2026-07-02 verification finding): the weak
+  same-magnitude eq cannot distinguish axis-collapse from arranged commuting readings, so too
+  high a weight stabilizes collapse traps at FULL session depth — dot plots (segments shrunk to
+  points make start≡mid≡end coincide in both axes) and mid-anchored bars (a lone mid-y ≡ length
+  pair under the best-pair-dominant LSE). At the default (0.2) all six full-depth acceptance
+  seeds end legible; 0.3 re-opens the traps (seeds 1, 5). Statically golden bars outrank both
+  traps at every weight in [0, 0.3] — the hazard is dynamical only. The strong same-ink/path
+  version should close the collapse loophole outright.
+
 **Optimizer (v2 — played-out trajectories)**
 - Every trajectory is independent: its own Adam state, anneal clock, plateau detector; no
   mid-run adoption or culling; a plateaued/capped trajectory freezes as an endpoint and its
