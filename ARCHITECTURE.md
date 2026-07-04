@@ -351,6 +351,12 @@ never verify by eyeballing. Add to this list as the system grows.
   (exclusive chips, pending/live semantics as the carrier strip); legacy boolean prefs migrate
   'true' → 'weak', 'false' → 'off', garbage → config default; the score panel's bonus row
   names the mode it was scored under and path-bearing pairs display their ink factor.
+- PROMOTED to the config default (2026-07-03): the acceptance certificate of record now refers
+  to **strong/0.2** — full `npm run accept` under the strong default: 49/49 checks, division of
+  labor 6/6, LEGIBLE 6/6, full-depth quality 0.799–0.807 (~20 min/seed at the ~2× strong tape).
+  The weak v2.2 numbers stay pinned in tests under an explicit `mode: 'weak'` override (the
+  bit-exactness invariant is unchanged; only the plumbing names the mode), and weak remains
+  selectable via the UI selector or config.
 
 **Optimizer (v2 — played-out trajectories)**
 - Every trajectory is independent: its own Adam state, anneal clock, plateau detector; no

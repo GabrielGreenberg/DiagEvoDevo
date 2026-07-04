@@ -409,31 +409,31 @@ describe('app: reinforcement controls (matches chip / coincidence 3-state select
     const { root, sessions } = mount();
     const before = displayedTotal(root);
     rchip(root, 'matchBonus').click();
-    cchip(root, 'strong').click();
+    cchip(root, 'weak').click(); // live default is 'strong' (2026-07-03 promotion) — weak is a CHANGE
     // persisted immediately (survives reloads)…
     expect(loadMatchBonus()).toBe(false);
-    expect(loadCoincidence()).toBe('strong');
-    // …the selector moved to strong (exclusive) and marks it pending; the hint shows
-    expect(selectedModes(root)).toEqual(['strong']);
-    expect(cchip(root, 'strong').classList.contains('pending')).toBe(true);
-    expect(cchip(root, 'weak').classList.contains('pending')).toBe(false);
+    expect(loadCoincidence()).toBe('weak');
+    // …the selector moved to weak (exclusive) and marks it pending; the hint shows
+    expect(selectedModes(root)).toEqual(['weak']);
+    expect(cchip(root, 'weak').classList.contains('pending')).toBe(true);
+    expect(cchip(root, 'strong').classList.contains('pending')).toBe(false);
     expect(rpend(root).hidden).toBe(false);
     // ADVERSARIAL: the LIVE session keeps its objective — cfg snapshot unchanged, display unchanged
     expect(sessions.length).toBe(1); // no new session was created
     expect(sessions[0]!.cfg.aggregation.matchBonus).toBe(true);
     expect(sessions[0]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
-    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe('weak');
+    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe('strong');
     step(root);
     expect(displayedTotal(root)).toBe(before);
-    // …and each further transition re-persists: strong → off → back to the live weak clears all
+    // …and each further transition re-persists: weak → off → back to the live strong clears all
     cchip(root, 'off').click();
     expect(loadCoincidence()).toBe('off');
     expect(selectedModes(root)).toEqual(['off']);
     expect(cchip(root, 'off').classList.contains('pending')).toBe(true);
     rchip(root, 'matchBonus').click();
-    cchip(root, 'weak').click();
+    cchip(root, 'strong').click();
     expect(loadMatchBonus()).toBe(true);
-    expect(loadCoincidence()).toBe('weak');
+    expect(loadCoincidence()).toBe('strong');
     expect(rpend(root).hidden).toBe(true); // pending == live again
     root.remove();
   });
@@ -460,7 +460,7 @@ describe('app: reinforcement controls (matches chip / coincidence 3-state select
     root.remove();
   });
 
-  it('weak → off applies on Reset: weight 0 removes exactly the bonus from the total', () => {
+  it('live → off applies on Reset: weight 0 removes exactly the bonus from the total', () => {
     const { root, sessions } = mount();
     const id0 = sessions[0]!.trajectories()[0]!.id;
     const before = sessions[0]!.detail(id0)!.breakdown;
@@ -484,14 +484,14 @@ describe('app: reinforcement controls (matches chip / coincidence 3-state select
     root.remove();
   });
 
-  it('weak → strong applies on Reset: the NEXT session scores under mode strong (same weight)', () => {
+  it('strong → weak applies on Reset: the NEXT session scores under mode weak (same weight)', () => {
     const { root, sessions } = mount();
-    cchip(root, 'strong').click();
+    cchip(root, 'weak').click(); // the non-default direction since the 2026-07-03 promotion
     q<HTMLButtonElement>(root, '[data-a="reset"]').click();
     expect(sessions.length).toBe(2);
-    expect(sessions[1]!.cfg.bonuses.coincidence.mode).toBe('strong'); // the selection BIT here
+    expect(sessions[1]!.cfg.bonuses.coincidence.mode).toBe('weak'); // the selection BIT here
     expect(sessions[1]!.cfg.bonuses.coincidence.weight).toBe(config.bonuses.coincidence.weight);
-    // the fake session scores under ITS cfg: the breakdown really is the strong-mode scoring
+    // the fake session scores under ITS cfg: the breakdown really is the weak-mode scoring
     const b = sessions[1]!.detail(sessions[1]!.trajectories()[0]!.id)!.breakdown;
     const want = scoreExact(
       seedToFigure(sessions[1]!.figureSeed),
@@ -500,9 +500,9 @@ describe('app: reinforcement controls (matches chip / coincidence 3-state select
     );
     expect(b.total).toBe(want.total);
     expect(b.bonuses.coincidence).toBe(want.bonuses.coincidence);
-    // pending == live again on the strong chip
-    expect(selectedModes(root)).toEqual(['strong']);
-    expect(cchip(root, 'strong').classList.contains('pending')).toBe(false);
+    // pending == live again on the weak chip
+    expect(selectedModes(root)).toEqual(['weak']);
+    expect(cchip(root, 'weak').classList.contains('pending')).toBe(false);
     expect(rpend(root).hidden).toBe(true);
     root.remove();
   });
@@ -747,8 +747,24 @@ describe('app: REFERENCE cell (golden bars benchmark)', () => {
     for (const pair of ['end y ≡ rise 1.00', 'end y ≡ length 1.00', 'rise ≡ length 1.00']) {
       expect(salesLine.textContent).toContain(pair);
     }
-    // weak mode: the bonus row names the mode and pair lines carry NO ink factor
+    // strong is the DEFAULT since the 2026-07-03 promotion: the bonus row names the mode and
+    // the path pairs carry their ink factor
+    expect(root.querySelector('.bonusrow')!.textContent).toContain('coincidence bonus (strong)');
+    expect(salesLine.textContent).toContain('ink');
+    root.remove();
+  });
+
+  it('under a stored WEAK pref keeps the v2.2 rendering: mode named, NO ink factor on pair lines', () => {
+    localStorage.setItem('diagram-evolver:prefs:coincidence', 'weak');
+    const { root, sessions } = mount();
+    expect(sessions[0]!.cfg.bonuses.coincidence.mode).toBe('weak'); // pref overrides the strong default
+    click(refCell(root));
+    const d = seedToDataSet(config.seeds.data);
+    const want = scoreExact(loudGoldenBarChart(d), d, sessions[0]!.cfg).bonuses.coincidence;
     expect(root.querySelector('.bonusrow')!.textContent).toContain('coincidence bonus (weak)');
+    expect(root.querySelector('.bonusrow')!.textContent).toContain(`+${want.toFixed(3)}`);
+    const salesLine = root.querySelectorAll('.scorepanel .coinline')[0]!;
+    expect(salesLine.textContent).toContain('end y ≡ rise 1.00');
     expect(salesLine.textContent).not.toContain('ink');
     root.remove();
   });

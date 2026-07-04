@@ -14,7 +14,9 @@ const data = seedToDataSet(3);
 const buildTotal = (leaves: Value[]): Value => scoreValue(leaves, data).total;
 
 describe('gradient: full-score gradcheck (∇_autograd ≈ ∇_finite)', () => {
-  it('relative L2 error < tol across many random figures; components pin the leaf-order map', () => {
+  // 12 seeds × 48-leaf finite differences under the strong-coincidence DEFAULT (~2× the weak
+  // tape, 2026-07-03 promotion) runs ~7s — beyond vitest's 5s default. Same invariant, more time.
+  it('relative L2 error < tol across many random figures; components pin the leaf-order map', { timeout: 60000 }, () => {
     for (let s = 0; s < 12; s++) {
       const f = seedToFigure(s + 1);
       const rep = gradcheckBuild(buildTotal, Array.from(f), { h: config.gradcheck.epsFD, tol: 1e-5 });

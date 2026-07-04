@@ -65,6 +65,12 @@ const strongCfg = (over: Partial<Config['bonuses']['coincidence']> = {}): Config
   bonuses: { coincidence: { ...config.bonuses.coincidence, mode: 'strong', ...over } },
 });
 const STRONG = strongCfg();
+// 'strong' is the config DEFAULT since the 2026-07-03 promotion; every weak-vs-strong contrast
+// below names BOTH modes explicitly so no assertion leans on the default.
+const WEAK: Config = {
+  ...config,
+  bonuses: { coincidence: { ...config.bonuses.coincidence, mode: 'weak' } },
+};
 
 const coinOf = (b: Breakdown, key: 'sales' | 'order'): number =>
   b.bonuses.relationCoin.find((r) => r.key === key)!.value;
@@ -266,7 +272,7 @@ describe('strong coincidence: axis vs collapse — the expected consequences', (
     expect(ovOf(dotCollapse, START_X, END_X)).toBe(0);
     expect(ovOf(dotCollapse, MID_Y, END_Y)).toBe(0);
     const bs = scoreExact(dotCollapse, data, STRONG);
-    const bw = scoreExact(dotCollapse, data);
+    const bw = scoreExact(dotCollapse, data, WEAK);
     expect(coinOf(bw, 'sales')).toBeGreaterThan(0.3); // the weak trap is REAL…
     expect(coinOf(bw, 'order')).toBeGreaterThan(0.3);
     expect(coinOf(bs, 'sales')).toBeLessThan(0.01); // …and strong closes it
@@ -320,9 +326,9 @@ describe('strong coincidence: axis vs collapse — the expected consequences', (
   });
 
   it('discrimination the weak mode PROVABLY lacks: weak coin(sales) ties golden with both traps; strong separates', () => {
-    const wG = coinOf(scoreExact(golden, data), 'sales');
-    const wM = coinOf(scoreExact(midAnchor, data), 'sales');
-    const wD = coinOf(scoreExact(dotCollapse, data), 'sales');
+    const wG = coinOf(scoreExact(golden, data, WEAK), 'sales');
+    const wM = coinOf(scoreExact(midAnchor, data, WEAK), 'sales');
+    const wD = coinOf(scoreExact(dotCollapse, data, WEAK), 'sales');
     expect(Math.abs(wG - wM)).toBeLessThan(0.01); // the blind spot, pinned honestly
     expect(Math.abs(wG - wD)).toBeLessThan(0.01);
     const sG = coinOf(scoreExact(golden, data, STRONG), 'sales');
@@ -344,7 +350,7 @@ describe('strong coincidence: axis vs collapse — the expected consequences', (
       const y = K * data.values[i]!;
       return [x, y, x, y + 3];
     });
-    const sw = coinOf(scoreExact(whisker, data), 'sales');
+    const sw = coinOf(scoreExact(whisker, data, WEAK), 'sales');
     const ss = coinOf(scoreExact(whisker, data, STRONG), 'sales');
     expect(sw).toBeGreaterThan(0.1); // the weak bonus still likes it…
     expect(ss).toBeLessThan(sw / 3); // …strong charges the ink gate g(3) ≈ 0.26 on every pair
@@ -375,7 +381,7 @@ describe('strong coincidence: orientation symmetry (mirrored figure)', () => {
     }
     for (const f of [golden, midAnchor]) {
       // residual asymmetry is the q-side only (fRatio/angle carriers see mirrored x), never the ink
-      expect(Math.abs(scoreExact(mirror(f), data).bonuses.coincidence - scoreExact(f, data).bonuses.coincidence)).toBeLessThan(1e-4);
+      expect(Math.abs(scoreExact(mirror(f), data, WEAK).bonuses.coincidence - scoreExact(f, data, WEAK).bonuses.coincidence)).toBeLessThan(1e-4);
       expect(
         Math.abs(
           scoreExact(mirror(f), data, STRONG).bonuses.coincidence -
@@ -401,7 +407,7 @@ describe('strong coincidence: the grounding gradient (∂bonus/∂start_y restor
 
   it('floating baselines feel a restoring pull, STRICTLY stronger under strong than weak', () => {
     for (const b of [2, 5, 8]) {
-      const weak = startYPull(b, config);
+      const weak = startYPull(b, WEAK);
       const strong = startYPull(b, STRONG);
       expect(weak, `weak b=${b}`).toBeLessThan(0);
       expect(strong, `strong b=${b}`).toBeLessThan(weak); // more negative: the added axis-seeking pull
@@ -411,26 +417,28 @@ describe('strong coincidence: the grounding gradient (∂bonus/∂start_y restor
 
 // ── weak / off: bit-exact with the pre-strong HEAD ───────────────────────────────
 
-describe('strong coincidence: mode "weak" (the default) and weight 0 are bit-exact with HEAD', () => {
-  it('the default mode is weak, and the strong knobs exist with their documented defaults', () => {
-    expect(config.bonuses.coincidence.mode).toBe('weak');
+describe('strong coincidence: mode "weak" (explicit) and weight 0 are bit-exact with HEAD', () => {
+  it('the default mode is strong (2026-07-03 promotion), and the knobs keep their documented defaults', () => {
+    expect(config.bonuses.coincidence.mode).toBe('strong');
     expect(config.bonuses.coincidence.sigmaPath).toBe(5);
     expect(config.bonuses.coincidence.thetaInk).toBe(5);
   });
 
   it('weak-mode totals reproduce the pinned HEAD values BIT-EXACTLY (both paths)', () => {
     // Pinned from commit c643315 via scratch/strong_baseline_head.ts (2026-07-03). These are the
-    // v2.2 DEFAULTS' values: if a default knob is retuned, re-run that probe and re-pin.
-    expect(scoreExact(golden, data).total).toBe(1.5560520650450400);
-    expect(scoreExact(golden, data).bonuses.coincidence).toBe(0.15048171043718322);
-    expect(scoreValue(leavesOf(golden), data).total.data).toBe(1.5119368382771405);
-    expect(scoreExact(seedToFigure(3), data).total).toBe(0.10912366886728150);
-    expect(scoreExact(seedToFigure(7), data).total).toBe(0.024334817488558050);
-    expect(scoreExact(seedToFigure(42), data).total).toBe(0.072190986019742623);
+    // v2.2 values at the then-default weak mode — since the strong promotion they run under the
+    // explicit WEAK override; the numbers themselves are untouched. If a shared knob is retuned,
+    // re-run that probe and re-pin.
+    expect(scoreExact(golden, data, WEAK).total).toBe(1.5560520650450400);
+    expect(scoreExact(golden, data, WEAK).bonuses.coincidence).toBe(0.15048171043718322);
+    expect(scoreValue(leavesOf(golden), data, WEAK).total.data).toBe(1.5119368382771405);
+    expect(scoreExact(seedToFigure(3), data, WEAK).total).toBe(0.10912366886728150);
+    expect(scoreExact(seedToFigure(7), data, WEAK).total).toBe(0.024334817488558050);
+    expect(scoreExact(seedToFigure(42), data, WEAK).total).toBe(0.072190986019742623);
   });
 
   it('weak mode records NO overlap fields; strong mode records them on path pairs only, ∈ [0,1]', () => {
-    for (const p of scoreExact(golden, data).bonuses.pairs) expect(p.overlap).toBeUndefined();
+    for (const p of scoreExact(golden, data, WEAK).bonuses.pairs) expect(p.overlap).toBeUndefined();
     const bs = scoreExact(golden, data, STRONG);
     expect(bs.bonuses.pairs.length).toBeGreaterThan(0);
     for (const p of bs.bonuses.pairs) {
@@ -458,7 +466,7 @@ describe('strong coincidence: mode "weak" (the default) and weight 0 are bit-exa
     const sOff = scoreValue(leavesOf(golden), data, strongCfg({ weight: 0 }));
     const wOff = scoreValue(leavesOf(golden), data, {
       ...config,
-      bonuses: { coincidence: { ...config.bonuses.coincidence, weight: 0 } },
+      bonuses: { coincidence: { ...config.bonuses.coincidence, mode: 'weak', weight: 0 } },
     });
     expect(sOff.total._op).toBe('-');
     expect(sOff.total.data === sOff.reward.data - sOff.penalty.data).toBe(true);
@@ -537,7 +545,8 @@ describe('strong coincidence: lockstep, gradcheck, tape', () => {
       }
       return seen.size;
     };
-    const nWeak = countNodes(scoreValue(leavesOf(golden), data).total);
+    // explicit weak vs explicit strong: the budget must not lean on whatever the default is
+    const nWeak = countNodes(scoreValue(leavesOf(golden), data, WEAK).total);
     const nStrong = countNodes(scoreValue(leavesOf(golden), data, STRONG).total);
     console.log(`[strong coincidence] tape nodes: weak=${nWeak} strong=${nStrong} (×${(nStrong / nWeak).toFixed(2)})`);
     expect(nStrong).toBeGreaterThan(nWeak); // the paths ARE on the tape (the pull is differentiable)

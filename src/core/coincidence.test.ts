@@ -56,6 +56,10 @@ const withCoin = (over: Partial<Config['bonuses']['coincidence']>, base: Config 
   ...base,
   bonuses: { coincidence: { ...base.bonuses.coincidence, ...over } },
 });
+// This file gates the v2.2 WEAK-formula behavior (same-magnitude eq); since the 2026-07-03
+// promotion made 'strong' the config default, the weak-pinned values run under an EXPLICIT
+// override. The invariants are unchanged; only the plumbing names the mode.
+const WEAK = withCoin({ mode: 'weak' });
 
 // hand-built figures ---------------------------------------------------------------
 
@@ -164,7 +168,7 @@ describe('coincidence: eq kernel (equality = proportionality + shared zero + sha
 // ── earning the bonus honestly (golden) vs not at all (random) ───────────────────
 
 describe('coincidence: golden bars earn it via the NAMED end-y ≡ rise ≡ length triple', () => {
-  const b = scoreExact(golden, data);
+  const b = scoreExact(golden, data, WEAK); // the weak-formula values this file pins
 
   it('total = reward + bonus − penalty; the bonus is material for golden', () => {
     expect(b.total).toBeCloseTo(b.reward + b.bonuses.coincidence - b.penalty, 12);
@@ -173,6 +177,14 @@ describe('coincidence: golden bars earn it via the NAMED end-y ≡ rise ≡ leng
     expect(coinOf(b, 'order')).toBeGreaterThan(0.3); // verticality: start-x ≡ end-x ≡ mid-x
     // quality stays reward/#relations — the bonus is NOT smuggled into it
     expect(b.quality).toBeCloseTo(b.reward / b.maxReward, 12);
+    // …and under the STRONG default (2026-07-03 promotion) the bonus stays material, paying the
+    // ink-path gates honestly (probe: 0.0584 total; sales 0.191; order 0.101 via the axis
+    // identity start-x ≡ fr·start dist — verticality's rulers are gated, different ink)
+    const bd = scoreExact(golden, data);
+    expect(bd.total).toBeCloseTo(bd.reward + bd.bonuses.coincidence - bd.penalty, 12);
+    expect(bd.bonuses.coincidence).toBeGreaterThan(0.04);
+    expect(coinOf(bd, 'sales')).toBeGreaterThan(0.15);
+    expect(coinOf(bd, 'order')).toBeGreaterThan(0.08);
   });
 
   it('all three pairs of the triple are in the breakdown, eq ≈ 1, sorted by contribution', () => {
@@ -223,12 +235,18 @@ describe('coincidence: gates — equality without meaning or visibility earns no
     const f = randomHeightBars(9);
     // the equality is REAL (loud and salient)…
     expect(eqGaussN(extract(RISE, f), extract(END_Y, f), config.bonuses.coincidence.sigmaEqLen)).toBe(1);
-    const b = scoreExact(f, data);
+    const b = scoreExact(f, data, WEAK);
     // …but the heights track no relation, so the q-gate zeroes the pair
     expect(coinOf(b, 'sales')).toBeLessThan(0.01);
     expect(b.bonuses.pairs.some((p) => p.key === 'sales')).toBe(false);
     // the machinery itself is alive on the SAME figure: ordered x still earns order coincidence
     expect(coinOf(b, 'order')).toBeGreaterThan(0.3);
+    // the STRONG default gates it identically; order's surviving pair is the axis identity
+    // start-x ≡ fr·start dist (probe: sales 4.7e-5, order 0.205)
+    const bd = scoreExact(f, data);
+    expect(coinOf(bd, 'sales')).toBeLessThan(0.01);
+    expect(bd.bonuses.pairs.some((p) => p.key === 'sales')).toBe(false);
+    expect(coinOf(bd, 'order')).toBeGreaterThan(0.15);
   });
 
   it('equal-but-CONSTANT: same-height bars are salience-gated to ≈ 0 (salience is inside q)', () => {

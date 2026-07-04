@@ -159,7 +159,11 @@ export const config = {
       //              = weak × alignment × ink. Angle-class pairs have no linear ink-path and keep
       //              the weak formula in strong mode (their strong theory awaits arcs; documented
       //              in paths.ts).
-      mode: 'weak' as 'weak' | 'strong',
+      // DEFAULT 'strong' (promoted 2026-07-03): full `npm run accept` certified under strong/0.2
+      // — 49/49 checks, division of labor 6/6, LEGIBLE 6/6, full-depth quality 0.799–0.807
+      // (~20 min/seed at the ~2× strong tape). 'weak' remains selectable (UI 3-state selector or
+      // here); its v2.2 values stay pinned in tests under an explicit mode:'weak' override.
+      mode: 'strong' as 'weak' | 'strong',
       // σ_path (page units): the ink-alignment tolerance of the strong overlap kernel
       //   ov_i = exp( −min(‖A₁−A₂‖²+‖B₁−B₂‖², ‖A₁−B₂‖²+‖B₁−A₂‖²) / (2σ_path²) )
       // (smooth min via smoothAbs, orientation-symmetric: a path traced backwards is the same

@@ -10,6 +10,26 @@ the same session that work happens. Never reconstruct state that belongs here.
 CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
 (`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
+### Strong coincidence PROMOTED to the config default (2026-07-03, certification green)
+`config.bonuses.coincidence.mode` default flipped 'weak' → 'strong' (weight unchanged at 0.2;
+weak stays selectable via the UI 3-state selector or config). **Certification** — full
+`npm run accept` under strong/0.2: **49/49 checks, division of labor 6/6, LEGIBLE 6/6**;
+full-depth per-seed quality 0.799–0.807 (totals 1.583–1.711), ~19–21 min/seed at the ~2× strong
+tape. The acceptance certificate of record now refers to strong/0.2 (ARCHITECTURE §Verification
+noted). **Test repin at the right layer** (no invariant weakened; recomputed via
+`scripts/probe_promotion_repin.ts`, never guessed): weak-pinned values (v2.2 bit-exact HEAD
+totals, weak pair thresholds, all weak arms of weak-vs-strong contrasts) now run under an
+EXPLICIT `mode: 'weak'` override — the pins are byte-identical; default-config tests re-pinned
+to honest strong values (golden bonus 0.0584, coin sales 0.191, order 0.101 — via the axis
+identity start-x ≡ fr·start dist; randomHeightBars order 0.205) with strong-default supplements
+ADDED next to the kept weak assertions; the tape-budget test compares explicit weak (31,293
+nodes) vs explicit strong (61,053, ×1.95 ≤ 2.2); the full-score gradcheck keeps its exact
+invariant with a raised per-test timeout (~7 s at the strong default vs vitest's 5 s cap); UI —
+default selector reads 'strong' with no stored pref, the pending/apply tests exercise the
+non-default 'weak' direction, legacy boolean pref migration unchanged, and the weak rendering
+(mode named, NO ink factor) is kept under a stored 'weak' pref (+1 test). Gates:
+`npm run check` 372/372 · `npm run build` · `npm run gradcheck` all green.
+
 ### Strong (same-ink-path) coincidence — off/weak/strong selectable (2026-07-03, user directive)
 The principled resolution of the weak bonus's verified blind spot (axis-by-construction vs
 collapse-by-degeneration — the w=0.3 dot-plot and mid-anchor traps). CONCEPT §7's registered
