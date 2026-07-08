@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Diagram Evolver</title>
+    <meta name="description" content="Evolve random line segments into faithful diagrams under a principled homomorphism score." />
+
+    <!-- PWA: installable, offline-capable app shell (see src/pwa/, vite.config.ts). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0e1016" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <!-- iOS: home-screen install + status-bar styling to match the dark theme -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="DiagramEvo" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <style>
       :root {
         --bg: #0e1016;
@@ -126,6 +137,14 @@
          not an "excluded" thing, so no strike-through on those. */
       .reinforce .rgname { flex-basis: 40px; }
       .reinforce .cmode.off { text-decoration: none; }
+
+      /* GLOSSARY panel (read-only reference): reuses the .readings fold mechanism + .rhint/.rgname,
+         adds term→definition rows. Static content — no chips, no pending/live state. */
+      .glossary .gsection { margin-top: 8px; }
+      .glossary .glist { margin: 4px 0 0; }
+      .glossary .grow { display: grid; grid-template-columns: 116px 1fr; gap: 8px; align-items: baseline; margin-top: 4px; }
+      .glossary .gterm { font-size: 11px; font-weight: 600; color: var(--ink); }
+      .glossary .gdef { font-size: 10px; line-height: 1.35; }
 
       /* coincidence bonus row (mirrors .penrow) + per-relation "coincident:" pair lines */
       .bonusrow .bval { margin-left: auto; font-family: ui-monospace, monospace; color: var(--int); }

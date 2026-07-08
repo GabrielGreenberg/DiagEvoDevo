@@ -10,6 +10,23 @@ the same session that work happens. Never reconstruct state that belongs here.
 CONCEPT.md §§5–8 and ARCHITECTURE.md are canonical for the v2 math; the build spec
 (`handoffs/2026-07-01-scoring-v2-design.md`) is now a historical record.
 
+### Glossary panel — read-only newcomer key in the sidebar (2026-07-07)
+A fold-open **Glossary** panel now sits between the Reinforcement and Score panels, reusing the
+Readings strip's fold mechanism verbatim (`<details class="readings glossary">`, ▸/▾ summary,
+`.rhint`/`.rgname` styling). Collapsed by default; static read-only reference — no chips, no
+pending/live state, no callbacks, no update in the notify loop; mounts once. Content lives in the
+exported `GLOSSARY` structure (`src/ui/glossary.ts`) — 4 titled groups, 37 `{term, def}` entries:
+Readings (the 16 distinct-carrier labels, verbatim), Score terms (11), Reinforcement (4), Run
+terms (6). Like the Readings strip it invents **no** fold persistence (prefs untouched).
+- Files: `src/ui/glossary.ts` (new), `src/ui/glossary.test.ts` (new, 10 adversarial tests),
+  `src/ui/app.ts` (+panel div, mount call), `index.html` (glossary-row CSS only).
+- Adversarial coverage: iterate `carriers(config)` and assert every live label is a term AND the
+  Readings group is EXACTLY the carrier-label set (drift either way fails); fold collapsed-by-default
+  + open/close; no `setItem` on mount; siblings (Readings/Reinforcement/Score) still render.
+- Gate green: `npm run typecheck`, `npx vitest run src/ui` (80/80), `npm run build`. Verified live
+  in the GUI: panel order datapanel→readings→reinforce→**glossary**→score, 37 terms/37 defs, 0
+  chips, glossary Readings terms == on-page carrier chips exactly.
+
 ### Strong coincidence PROMOTED to the config default (2026-07-03, certification green)
 `config.bonuses.coincidence.mode` default flipped 'weak' → 'strong' (weight unchanged at 0.2;
 weak stays selectable via the UI 3-state selector or config). **Certification** — full

@@ -59,6 +59,7 @@ import { renderScorePanel } from './scorePanel';
 import { mountControls, updateControls, type ControlCallbacks } from './controls';
 import { mountCarrierStrip, updateCarrierStrip } from './carrierStrip';
 import { mountReinforcement, updateReinforcement } from './reinforcement';
+import { mountGlossary } from './glossary';
 
 const randomSeed = (): number => Math.floor(Math.random() * 1_000_000) + 1;
 
@@ -128,6 +129,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
         <div class="panel datapanel" id="datapanel"></div>
         <div class="panel readingspanel" id="readingspanel"></div>
         <div class="panel reinforcepanel" id="reinforcepanel"></div>
+        <div class="panel glossarypanel" id="glossarypanel"></div>
         <div class="panel scorepanel" id="scorepanel"></div>
       </aside>
     </main>`;
@@ -138,6 +140,7 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
   const dataRoot = root.querySelector('#datapanel') as HTMLElement;
   const readingsRoot = root.querySelector('#readingspanel') as HTMLElement;
   const reinforceRoot = root.querySelector('#reinforcepanel') as HTMLElement;
+  const glossaryRoot = root.querySelector('#glossarypanel') as HTMLElement;
   const scoreRoot = root.querySelector('#scorepanel') as HTMLElement;
   const caption = root.querySelector('#figcaption') as HTMLElement;
 
@@ -302,6 +305,10 @@ export function startApp(root: HTMLElement, makeSession: SessionFactory = defaul
       store.set({ coincidence: mode }); // pending only — the live session is untouched
     },
   });
+
+  // GLOSSARY: static read-only reference. Mounts once (no pending/live state, no callbacks, no
+  // per-notify update) — the browser tracks its own fold state, like the Readings strip.
+  mountGlossary(glossaryRoot);
 
   // Sticky selection: the ONLY place selectedId changes besides newSession — a thumbnail click
   // (the reference cell included: it selects via the sentinel REFERENCE_ID like any thumbnail).

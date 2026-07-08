@@ -4,6 +4,22 @@
   "private": true,
   "type": "module",
   "description": "Evolve random line segments into faithful diagrams under a principled homomorphism score.",
+  "keywords": [
+    "diagram",
+    "data-visualization",
+    "homomorphism",
+    "optimization",
+    "autograd",
+    "gradient-descent",
+    "bar-chart",
+    "evolutionary-computation",
+    "graphical-perception",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GabrielGreenberg/DiagEvoDevo.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
