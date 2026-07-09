@@ -1,0 +1,25 @@
+# Cache-Control rules for Cloudflare Pages (and Netlify, which also reads _headers from the
+# publish dir). Vite copies public/_headers verbatim to dist/_headers. Kept identical in intent to
+# netlify.toml so the two never contradict. See DEPLOY.md for the rationale.
+#
+# Cloudflare Pages has no config file for build settings — set build command `npm run build` and
+# output dir `dist` in its dashboard; this file is all Cloudflare reads for headers.
+
+/sw.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+  Content-Type: application/manifest+json; charset=utf-8
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/icons/*
+  Cache-Control: public, max-age=604800

@@ -12,6 +12,9 @@ deliberately does not privilege it.
 > Research instrument, work in progress. The math is the product; the code serves it. License is
 > not yet chosen — treat it as **all-rights-reserved / TBD** until a `LICENSE` file appears.
 
+> **Deploy:** it is an installable, offline-capable PWA. Publish to Netlify, Vercel, or Cloudflare
+> Pages (root-served over HTTPS) — one-page guide in [`DEPLOY.md`](DEPLOY.md).
+
 ---
 
 ## The idea

@@ -1,0 +1,48 @@
+# Netlify deploy config for the Diagram Evolver PWA.
+# Root-served static site: `npm run build` -> dist/. See DEPLOY.md.
+#
+# Cache-Control contract (why these values):
+#   - /sw.js, /index.html, /  -> no-cache: a redeploy ships a new hashed JS bundle; the HTML that
+#     references it and the service worker that precaches it must never be served stale, or clients
+#     get pinned to an old build. no-cache = revalidate every time (not "never store").
+#   - /manifest.webmanifest    -> no-cache + explicit MIME.
+#   - /assets/*                -> immutable 1y: filenames are content-hashed, so bytes never change.
+#   - /icons/*                 -> 1 week: stable names, safe to cache but may be replaced.
+#
+# Netlify also reads dist/_headers (from public/_headers). Both are kept identical in intent so the
+# two mechanisms never contradict; this file is the canonical, human-readable source.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Content-Type = "application/manifest+json; charset=utf-8"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
